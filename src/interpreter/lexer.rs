@@ -2,15 +2,11 @@ pub struct Lexer<'a> {
     input: std::iter::Peekable<std::str::Chars<'a>>
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum OpToken {
-    Eq, Ne, Ge, Le, And, Or,
-    Shl, Shr, Ushr, Single(char)
-}
-
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Token {
-    Op(OpToken),
+    Eq, Ne, Ge, Le, And, Or,
+    Shl, Shr, Ushr,
+    Single(char),
     Integer(i64),
     Float(f64),
     String(String),
@@ -45,15 +41,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn check_double(&mut self, first: char, second: char, double: OpToken) -> Token {
+    fn check_double(&mut self, first: char, second: char, double: Token) -> Token {
         if let Some(&char) = self.input.peek() {
             if char == second {
                 self.input.next();
-                return Token::Op(double);
+                return double;
             }
         }
 
-        Token::Op(OpToken::Single(first))
+        Token::Single(first)
     }
 
     fn read_digits(&mut self, str: &mut String, radix: u32) {
@@ -85,7 +81,7 @@ impl<'a> Lexer<'a> {
             self.read_digits(&mut str, 10);
 
             if str.len() == 1 {
-                return Ok(Token::Op(OpToken::Single('.')));
+                return Ok(Token::Single('.'));
             }
         } else {
             if first != '0' {
@@ -192,11 +188,11 @@ impl<'a> Lexer<'a> {
         Token::Name(name)
     }
 
-    pub fn new(input: std::iter::Peekable<std::str::Chars<'a>>) -> Self {
-        Self { input }
+    pub fn new(input: std::str::Chars<'a>) -> Self {
+        Self { input: input.peekable() }
     }
 
-    pub fn next(&mut self) -> Result<Token, LexerError> {
+    pub fn next_token(&mut self) -> Result<Token, LexerError> {
         loop {
             let char = match self.input.next() {
                 Some(char) => char,
@@ -209,7 +205,7 @@ impl<'a> Lexer<'a> {
                         self.skip_line();
                         continue;
                     }
-                    _ => Token::Op(OpToken::Single('#'))
+                    _ => Token::Single('#')
                 }
                 '/' => match self.input.peek() {
                     Some('/') => {
@@ -220,42 +216,42 @@ impl<'a> Lexer<'a> {
                         self.skip_multi_comment()?;
                         continue;
                     }
-                    _ => Token::Op(OpToken::Single('/'))
+                    _ => Token::Single('/')
                 }
                 ' ' | '\t' | '\r' | '\n' => continue,
-                '=' => self.check_double('=', '=', OpToken::Eq),
-                '!' => self.check_double('!', '=', OpToken::Ne),
-                '&' => self.check_double('&', '&', OpToken::And),
-                '|' => self.check_double('|', '|', OpToken::Or),
+                '=' => self.check_double('=', '=', Token::Eq),
+                '!' => self.check_double('!', '=', Token::Ne),
+                '&' => self.check_double('&', '&', Token::And),
+                '|' => self.check_double('|', '|', Token::Or),
                 '>' => match self.input.peek() {
                     Some('=') => {
                         self.input.next();
-                        Token::Op(OpToken::Ge)
+                        Token::Ge
                     }
                     Some('>') => {
                         self.input.next();
                         if let Some(_) = self.input.next_if_eq(&'>') {
-                            Token::Op(OpToken::Ushr)
+                            Token::Ushr
                         } else {
-                            Token::Op(OpToken::Shr)
+                            Token::Shr
                         }
                     }
-                    _ => Token::Op(OpToken::Single('>'))
+                    _ => Token::Single('>')
                 }
                 '<' => match self.input.peek() {
                     Some('=') => {
                         self.input.next();
-                        Token::Op(OpToken::Le)
+                        Token::Le
                     }
                     Some('<') => {
                         self.input.next();
-                        Token::Op(OpToken::Shl)
+                        Token::Shl
                     }
-                    _ => Token::Op(OpToken::Single('<'))
+                    _ => Token::Single('<')
                 }
                 '(' | ')' | '{' | '}' | '[' | ']' | ';' | ',' | '?' | ':' |
                 '+' | '-' | '*' | '%' | '^' | '~' | '@' | '$'
-                    => Token::Op(OpToken::Single(char)),
+                    => Token::Single(char),
                 '0'..='9' | '.' => self.parse_number(char)?,
                 '"' | '\'' => self.parse_string(char)?,
                 'A'..='Z' | 'a'..='z' | '_' => self.parse_name(char),
