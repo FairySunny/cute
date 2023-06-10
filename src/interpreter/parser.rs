@@ -7,7 +7,7 @@ struct Parser<'a> {
 #[derive(Debug)]
 enum ParserError {
     LexerError,
-    UnexpectedToken(Token)
+    UnexpectedToken
 }
 
 impl From<LexerError> for ParserError {
@@ -18,24 +18,21 @@ impl From<LexerError> for ParserError {
 
 impl<'a> Parser<'a> {
     fn expect(&mut self, expected: Token) -> Result<(), ParserError> {
-        match self.lexer.next_token() {
+        match self.lexer.next() {
             Err(_) => Err(ParserError::LexerError),
             Ok(token) if token == expected => Ok(()),
-            Ok(token) => Err(ParserError::UnexpectedToken(token))
+            _ => Err(ParserError::UnexpectedToken)
         }
     }
 
-    fn simple_expression(&mut self, token: Token) -> Result<(), ParserError> {
-        match token {
+    fn simple_expression(&mut self) -> Result<(), ParserError> {
+        match self.lexer.next()? {
             Token::Single('(') => {
-                let token = self.lexer.next_token()?;
-
-                if Self::is_expression(&token) {
-                    self.expression(token);
-                    self.expect(Token::Single(')'))?;
-                } else {
-                    return Err(ParserError::UnexpectedToken(token));
+                if !Self::is_expression(self.lexer.peek()?) {
+                    return Err(ParserError::UnexpectedToken);
                 }
+                self.expression();
+                self.expect(Token::Single(')'))?;
             }
             Token::Single('$') => {
                 todo!()
@@ -46,7 +43,7 @@ impl<'a> Parser<'a> {
             Token::Name(name) => {
                 todo!()
             }
-            _ => return Err(ParserError::UnexpectedToken(token))
+            _ => return Err(ParserError::UnexpectedToken)
         }
 
         Ok(())
@@ -56,27 +53,16 @@ impl<'a> Parser<'a> {
         todo!()
     }
 
-    fn expression(&mut self, token: Token) {
+    fn expression(&mut self) {
         todo!()
     }
 
-    fn statement_list(&mut self, in_closure: bool) -> Result<(), ParserError> {
+    fn statement_list(&mut self) -> Result<(), ParserError> {
         println!("{{");
 
-        loop {
-            let token = self.lexer.next_token()?;
-
-            if Self::is_expression(&token) {
-                self.expression(token);
-                self.expect(Token::Single(';'))?;
-            } else {
-                match token {
-                    Token::Single('}') if in_closure => {}
-                    Token::EOF if !in_closure => {}
-                    _ => return Err(ParserError::UnexpectedToken(token))
-                }
-                break;
-            }
+        while Self::is_expression(self.lexer.peek()?) {
+            self.expression();
+            self.expect(Token::Single(';'))?;
         }
 
         println!("}}");
@@ -87,5 +73,6 @@ impl<'a> Parser<'a> {
 
 pub fn parse(lexer: Lexer) {
     let mut parser = Parser { lexer };
-    parser.statement_list(false).unwrap();
+    parser.statement_list().unwrap();
+    parser.expect(Token::EOF).unwrap();
 }

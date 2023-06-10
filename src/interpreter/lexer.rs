@@ -1,5 +1,6 @@
 pub struct Lexer<'a> {
-    input: std::iter::Peekable<std::str::Chars<'a>>
+    input: std::iter::Peekable<std::str::Chars<'a>>,
+    peeked: Option<Token>
 }
 
 #[derive(PartialEq, Debug)]
@@ -188,11 +189,7 @@ impl<'a> Lexer<'a> {
         Token::Name(name)
     }
 
-    pub fn new(input: std::str::Chars<'a>) -> Self {
-        Self { input: input.peekable() }
-    }
-
-    pub fn next_token(&mut self) -> Result<Token, LexerError> {
+    fn parse_token(&mut self) -> Result<Token, LexerError> {
         loop {
             let char = match self.input.next() {
                 Some(char) => char,
@@ -260,5 +257,27 @@ impl<'a> Lexer<'a> {
 
             return Ok(token);
         }
+    }
+
+    pub fn new(input: std::str::Chars<'a>) -> Self {
+        Self {
+            input: input.peekable(),
+            peeked: None
+        }
+    }
+
+    pub fn next(&mut self) -> Result<Token, LexerError> {
+        match self.peeked.take() {
+            Some(token) => Ok(token),
+            None => self.parse_token()
+        }
+    }
+
+    pub fn peek(&mut self) -> Result<&Token, LexerError> {
+        if let None = self.peeked {
+            self.peeked = Some(self.parse_token()?);
+        }
+
+        Ok(self.peeked.as_ref().unwrap())
     }
 }
