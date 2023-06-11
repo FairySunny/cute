@@ -95,26 +95,44 @@ impl<'a> Parser<'a> {
                 println!("call 0");
                 None
             }
+            Token::Single('@') => match self.lexer.next()? {
+                Token::Single('{') => {
+                    println!("push_closure =>");
+                    self.statement_list(&Token::Single('}'))?;
+                    None
+                }
+                Token::Name(name) => {
+                    println!("load_lib {name}");
+                    None
+                }
+                _ => return Err(ParserError::UnexpectedToken)
+            }
+            Token::Single('[') => {
+                let cnt = self.expression_list(&Token::Single(']'))?;
+                println!("new_array {cnt}");
+                None
+            }
             _ => return Err(ParserError::UnexpectedToken)
         };
 
-        while let Token::Single('.' | '(' | '[') = self.lexer.peek()? {
+        while let &Token::Single(char @ ('.' | '(' | '[')) = self.lexer.peek()? {
+            self.lexer.next()?;
+
             if let Some(lval) = lval {
                 self.read_left_value(&lval);
             }
 
-            lval = match self.lexer.next()? {
-                Token::Single('.') => {
+            lval = match char {
+                '.' => {
                     let name = self.expect_name()?;
                     Some(LeftValue::Field(name))
                 }
-                Token::Single('(') => {
-                    // ... exp_list
-                    self.expect_single(')')?;
-                    println!("call <num>");
+                '(' => {
+                    let cnt = self.expression_list(&Token::Single(')'))?;
+                    println!("call {cnt}");
                     None
                 }
-                Token::Single('[') => {
+                '[' => {
                     self.expression()?;
                     self.expect_single(']')?;
                     Some(LeftValue::Item)
@@ -124,6 +142,10 @@ impl<'a> Parser<'a> {
         }
 
         Ok(lval)
+    }
+
+    fn left_value(&mut self) -> Result<LeftValue, ParserError> {
+        self.simple_expression()?.ok_or(ParserError::NotLeftValue)
     }
 
     fn try_uop(&mut self) -> Result<Option<char>, ParserError> {
@@ -215,10 +237,24 @@ impl<'a> Parser<'a> {
                 self.expression()?;
                 println!("}} while nil");
             }
+            Token::Single('>') => {
+                self.lexer.next()?;
+                let lval = self.left_value()?;
+                println!("push_arg <idx>");
+                println!("dup");
+                self.write_left_value(&lval);
+            }
             Token::Single('<') => {
                 self.lexer.next()?;
                 self.expression()?;
                 println!("return");
+            }
+            Token::Shr => {
+                self.lexer.next()?;
+                let lval = self.left_value()?;
+                println!("in");
+                println!("dup");
+                self.write_left_value(&lval);
             }
             Token::Shl => {
                 self.lexer.next()?;
@@ -232,6 +268,28 @@ impl<'a> Parser<'a> {
         }
 
         Ok(())
+    }
+
+    fn expression_list(&mut self, ending: &Token) -> Result<u8, ParserError> {
+        if self.lexer.peek()? == ending {
+            self.lexer.next()?;
+            return Ok(0);
+        }
+
+        let mut cnt = 0u8;
+
+        loop {
+            self.expression()?;
+            cnt += 1;
+
+            match self.lexer.next()? {
+                Token::Single(',') => {},
+                token if &token == ending => break,
+                _ => return Err(ParserError::UnexpectedToken)
+            }
+        }
+
+        Ok(cnt)
     }
 
     fn statement_list(&mut self, ending: &Token) -> Result<(), ParserError> {
