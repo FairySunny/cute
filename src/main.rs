@@ -1,13 +1,6 @@
-use cute::interpreter::lexer::{Lexer, Token};
+use cute::interpreter::{lexer::Lexer, parser};
 
 fn main() {
     let s = include_str!("../test/_sqrt.cute");
-    let mut l = Lexer::new(s.chars());
-    loop {
-        let token = l.next().unwrap();
-        println!("{:?}", token);
-        if let Token::EOF = token {
-            break;
-        }
-    }
+    parser::parse(Lexer::new(s.chars()));
 }
