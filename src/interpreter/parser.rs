@@ -23,7 +23,6 @@ struct UOp {
 struct BOp {
     left_pri: u8,
     right_pri: u8,
-    write_lval: bool,
     name: &'static str
 }
 
@@ -32,7 +31,14 @@ impl BOp {
         Self {
             left_pri: priority,
             right_pri: priority,
-            write_lval: false,
+            name
+        }
+    }
+
+    fn right(priority: u8, name: &'static str) -> Self {
+        Self {
+            left_pri: priority + 1,
+            right_pri: priority,
             name
         }
     }
@@ -167,11 +173,11 @@ impl<'a> Parser<'a> {
     fn try_uop(&mut self) -> Result<Option<UOp>, ParserError> {
         let uop = match self.lexer.peek()? {
             Token::Single(char) => match char {
-                '+' => Some(UOp { pri: 14, name: "+", write_lval: false }),
-                '-' => Some(UOp { pri: 14, name: "+", write_lval: false }),
-                '!' => Some(UOp { pri: 14, name: "+", write_lval: false }),
-                '~' => Some(UOp { pri: 14, name: "+", write_lval: false }),
-                '#' => Some(UOp { pri: 14, name: "+", write_lval: false }),
+                '+' => Some(UOp { pri: 16, name: "+", write_lval: false }),
+                '-' => Some(UOp { pri: 16, name: "-", write_lval: false }),
+                '!' => Some(UOp { pri: 16, name: "!", write_lval: false }),
+                '~' => Some(UOp { pri: 16, name: "~", write_lval: false }),
+                '#' => Some(UOp { pri: 16, name: "#", write_lval: false }),
                 ':' => Some(UOp { pri: 0, name: ":", write_lval: false }),
                 '>' => Some(UOp { pri: 0, name: ">", write_lval: true }),
                 '<' => Some(UOp { pri: 0, name: "<", write_lval: false }),
@@ -188,33 +194,29 @@ impl<'a> Parser<'a> {
     fn try_bop(&mut self) -> Result<Option<BOp>, ParserError> {
         let bop = match self.lexer.peek()? {
             Token::Single(char) => match char {
-                '+' => Some(BOp::left(12, "+")),
-                '-' => Some(BOp::left(12, "-")),
-                '*' => Some(BOp::left(13, "*")),
-                '/' => Some(BOp::left(13, "/")),
-                '%' => Some(BOp::left(13, "%")),
-                '>' => Some(BOp::left(5, ">")),
-                '<' => Some(BOp::left(5, "<")),
-                '|' => Some(BOp::left(6, "|")),
-                '^' => Some(BOp::left(7, "^")),
-                '&' => Some(BOp::left(8, "&")),
-                '=' => Some(BOp {
-                    left_pri: 2,
-                    right_pri: 1,
-                    write_lval: true,
-                    name: "="
-                }),
+                '+' => Some(BOp::left(14, "+")),
+                '-' => Some(BOp::left(14, "-")),
+                '*' => Some(BOp::left(15, "*")),
+                '/' => Some(BOp::left(15, "/")),
+                '%' => Some(BOp::left(15, "%")),
+                '>' => Some(BOp::left(7, ">")),
+                '<' => Some(BOp::left(7, "<")),
+                '|' => Some(BOp::left(8, "|")),
+                '^' => Some(BOp::left(9, "^")),
+                '&' => Some(BOp::left(10, "&")),
+                '?' => Some(BOp::right(3, "?:")),
+                '=' => Some(BOp::right(1, "=")),
                 _ => None
             },
-            Token::Eq => Some(BOp::left(5, "==")),
-            Token::Ne => Some(BOp::left(5, "!=")),
-            Token::Ge => Some(BOp::left(5, ">=")),
-            Token::Le => Some(BOp::left(5, "<=")),
-            Token::Shl => Some(BOp::left(9, "<<")),
-            Token::Shr => Some(BOp::left(9, ">>")),
-            Token::Ushr => Some(BOp::left(9, ">>>")),
-            Token::Or => Some(BOp::left(3, "||")),
-            Token::And => Some(BOp::left(4, "&&")),
+            Token::Eq => Some(BOp::left(7, "==")),
+            Token::Ne => Some(BOp::left(7, "!=")),
+            Token::Ge => Some(BOp::left(7, ">=")),
+            Token::Le => Some(BOp::left(7, "<=")),
+            Token::Shl => Some(BOp::left(11, "<<")),
+            Token::Shr => Some(BOp::left(11, ">>")),
+            Token::Ushr => Some(BOp::left(11, ">>>")),
+            Token::Or => Some(BOp::left(5, "||")),
+            Token::And => Some(BOp::left(6, "&&")),
             _ => None
         };
 
@@ -272,6 +274,25 @@ impl<'a> Parser<'a> {
                     self.read_left_value(lval);
                 }
             }
+            match bop.name {
+                "||" => {
+                    println!("dup");
+                    println!("if false {{");
+                    println!("pop");
+                }
+                "&&" => {
+                    println!("dup");
+                    println!("if true {{");
+                    println!("pop");
+                }
+                "?:" => {
+                    println!("if true {{");
+                    self.expression()?;
+                    self.expect_single(':')?;
+                    println!("}} else {{");
+                }
+                _ => {}
+            }
 
             let (next_lval, next_bop) = self.op_expression(bop.right_pri)?;
 
@@ -279,18 +300,16 @@ impl<'a> Parser<'a> {
                 self.read_left_value(lval);
             }
 
-            if bop.name != "=" {
-                println!("bop {}", bop.name);
-            }
-
-            if bop.write_lval {
-                match &lval {
+            match bop.name {
+                "=" => match &lval {
                     Some(lval) => {
                         println!("dup");
                         self.write_left_value(lval);
                     }
                     None => return Err(ParserError::NotLeftValue)
                 }
+                "||" | "&&" | "?:" => println!("}}"),
+                _ => println!("bop {}", bop.name)
             }
 
             lval = None;
