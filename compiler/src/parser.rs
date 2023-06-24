@@ -1,4 +1,4 @@
-use super::lexer::{Lexer, Token, LexerError};
+use crate::lexer::{Lexer, Token, LexerError};
 
 struct Parser<'a> {
     lexer: Lexer<'a>

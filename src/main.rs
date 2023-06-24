@@ -1,4 +1,4 @@
-use cute::interpreter::{lexer::Lexer, parser};
+use compiler::{lexer::Lexer, parser};
 
 fn main() {
     let s = include_str!("../test/_add.cute");
