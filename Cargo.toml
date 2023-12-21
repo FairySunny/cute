@@ -13,4 +13,5 @@ members = [
 ]
 
 [dependencies]
+bytecode = { path = "bytecode" }
 compiler = { path = "compiler" }

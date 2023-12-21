@@ -1,7 +1,9 @@
 use crate::lexer::{Lexer, Token, LexerError};
+use bytecode::{code, program::{Program, GeneratingError}};
 
-struct Parser<'a> {
-    lexer: Lexer<'a>
+struct Parser<'a, 'b> {
+    lexer: Lexer<'a>,
+    program: &'b mut Program
 }
 
 #[derive(Debug)]
@@ -13,51 +15,92 @@ enum LeftValue {
 }
 
 #[derive(Debug)]
+enum UOpAction {
+    NoOp,
+    Loop,
+    Arg,
+    Return,
+    In,
+    Out,
+    Code(u8)
+}
+
+#[derive(Debug)]
 struct UOp {
     pri: u8,
     write_lval: bool,
-    name: &'static str
+    action: UOpAction
+}
+
+#[derive(Debug)]
+enum BOpAction {
+    Assign,
+    Or,
+    And,
+    If,
+    Code(u8)
 }
 
 #[derive(Debug)]
 struct BOp {
     left_pri: u8,
     right_pri: u8,
-    name: &'static str
+    action: BOpAction
 }
 
 impl BOp {
-    fn left(priority: u8, name: &'static str) -> Self {
+    fn left(priority: u8, action: BOpAction) -> Self {
         Self {
             left_pri: priority,
             right_pri: priority,
-            name
+            action
         }
     }
 
-    fn right(priority: u8, name: &'static str) -> Self {
+    fn left_c(priority: u8, code: u8) -> Self {
+        Self::left(priority, BOpAction::Code(code))
+    }
+
+    fn right(priority: u8, action: BOpAction) -> Self {
         Self {
             left_pri: priority + 1,
             right_pri: priority,
-            name
+            action
         }
     }
 }
 
 #[derive(Debug)]
 enum ParserError {
-    LexerError,
+    LexerError(LexerError),
     UnexpectedToken,
-    NotLeftValue
+    NotLeftValue,
+    GeneratingError(GeneratingError),
+    JumpingTooFar
 }
 
 impl From<LexerError> for ParserError {
-    fn from(_: LexerError) -> Self {
-        Self::LexerError
+    fn from(e: LexerError) -> Self {
+        Self::LexerError(e)
     }
 }
 
-impl<'a> Parser<'a> {
+impl From<GeneratingError> for ParserError {
+    fn from(e: GeneratingError) -> Self {
+        Self::GeneratingError(e)
+    }
+}
+
+fn jump_delta(delta: usize, backward: bool) -> Result<i8, ParserError> {
+    if backward {
+        let delta: i64 = delta.try_into().map_err(|_| ParserError::JumpingTooFar)?;
+        (-delta).try_into().map_err(|_| ParserError::JumpingTooFar)
+    } else {
+        delta.try_into().map_err(|_| ParserError::JumpingTooFar)
+    }
+}
+
+impl<'a, 'b> Parser<'a, 'b> {
     fn expect_single(&mut self, expected: char) -> Result<(), ParserError> {
         match self.lexer.next()? {
             Token::Single(char) if char == expected => Ok(()),
@@ -72,30 +115,50 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn read_left_value(&mut self, lval: &LeftValue) {
+    fn read_left_value(&mut self, lval: &LeftValue) -> Result<(), ParserError> {
         match lval {
-            LeftValue::Variable(name) => println!("load {name}"),
-            LeftValue::Super(name) => println!("load_super {name}"),
-            LeftValue::Field(name) => println!("load_field {name}"),
-            LeftValue::Item => println!("load_item")
+            LeftValue::Variable(name) => {
+                self.program.byte(code::LOAD);
+                self.program.str(name)?;
+            },
+            LeftValue::Super(name) => {
+                self.program.byte(code::LOAD_SUPER);
+                self.program.str(name)?;
+            },
+            LeftValue::Field(name) => {
+                self.program.byte(code::LOAD_FIELD);
+                self.program.str(name)?;
+            },
+            LeftValue::Item => self.program.byte(code::LOAD_ITEM)
         }
+        Ok(())
     }
 
-    fn write_left_value(&mut self, lval: &LeftValue) {
+    fn write_left_value(&mut self, lval: &LeftValue) -> Result<(), ParserError> {
         match lval {
-            LeftValue::Variable(name) => println!("store {name}"),
-            LeftValue::Super(name) => println!("store_super {name}"),
-            LeftValue::Field(name) => println!("store_field {name}"),
-            LeftValue::Item => println!("store_item")
+            LeftValue::Variable(name) => {
+                self.program.byte(code::STORE);
+                self.program.str(name)?;
+            },
+            LeftValue::Super(name) => {
+                self.program.byte(code::STORE_SUPER);
+                self.program.str(name)?;
+            },
+            LeftValue::Field(name) => {
+                self.program.byte(code::STORE_FIELD);
+                self.program.str(name)?;
+            },
+            LeftValue::Item => self.program.byte(code::STORE_ITEM)
         }
+        Ok(())
     }
 
     fn simple_expression(&mut self) -> Result<Option<LeftValue>, ParserError> {
         let mut lval = match self.lexer.next()? {
             Token::Name(name) => Some(LeftValue::Variable(name)),
-            Token::Integer(value) => { println!("push_int {value}"); None },
-            Token::Float(value) => { println!("push_float {value}"); None },
-            Token::String(value) => { println!("push_string {value}"); None },
+            Token::Integer(value) => { self.program.push_int(value)?; None },
+            Token::Float(value) => { self.program.push_float(value)?; None },
+            Token::String(value) => { self.program.push_str(&value)?; None },
             Token::Single('$') => {
                 let mut level = 0u8;
                 while self.lexer.peek()? == &Token::Single('$') {
@@ -106,7 +169,8 @@ impl<'a> Parser<'a> {
                 if level == 0 {
                     Some(LeftValue::Super(name))
                 } else {
-                    println!("push_super {level}");
+                    self.program.byte(code::PUSH_SUPER);
+                    self.program.byte(level);
                     Some(LeftValue::Field(name))
                 }
             }
@@ -116,26 +180,31 @@ impl<'a> Parser<'a> {
                 None
             }
             Token::Single('{') => {
-                println!("push_closure =>");
+                self.program.push_closure_and_switch()?;
                 self.statement_list(&Token::Single('}'))?;
-                println!("call 0");
+                self.program.switch_back();
+                self.program.byte(code::CALL);
+                self.program.byte(0);
                 None
             }
             Token::Single('@') => match self.lexer.next()? {
                 Token::Single('{') => {
-                    println!("push_closure =>");
+                    self.program.push_closure_and_switch()?;
                     self.statement_list(&Token::Single('}'))?;
+                    self.program.switch_back();
                     None
                 }
                 Token::Name(name) => {
-                    println!("load_lib {name}");
+                    self.program.byte(code::LOAD_LIB);
+                    self.program.str(&name)?;
                     None
                 }
                 _ => return Err(ParserError::UnexpectedToken)
             }
             Token::Single('[') => {
                 let cnt = self.expression_list(&Token::Single(']'))?;
-                println!("new_array {cnt}");
+                self.program.byte(code::NEW_ARRAY);
+                self.program.byte(cnt);
                 None
             }
             _ => return Err(ParserError::UnexpectedToken)
@@ -145,7 +214,7 @@ impl<'a> Parser<'a> {
             self.lexer.next()?;
 
             if let Some(lval) = &lval {
-                self.read_left_value(lval);
+                self.read_left_value(lval)?;
             }
 
             lval = match char {
@@ -155,7 +224,8 @@ impl<'a> Parser<'a> {
                 }
                 '(' => {
                     let cnt = self.expression_list(&Token::Single(')'))?;
-                    println!("call {cnt}");
+                    self.program.byte(code::CALL);
+                    self.program.byte(cnt);
                     None
                 }
                 '[' => {
@@ -173,18 +243,18 @@ impl<'a> Parser<'a> {
     fn try_uop(&mut self) -> Result<Option<UOp>, ParserError> {
         let uop = match self.lexer.peek()? {
             Token::Single(char) => match char {
-                '+' => Some(UOp { pri: 16, name: "+", write_lval: false }),
-                '-' => Some(UOp { pri: 16, name: "-", write_lval: false }),
-                '!' => Some(UOp { pri: 16, name: "!", write_lval: false }),
-                '~' => Some(UOp { pri: 16, name: "~", write_lval: false }),
-                '#' => Some(UOp { pri: 16, name: "#", write_lval: false }),
-                ':' => Some(UOp { pri: 0, name: ":", write_lval: false }),
-                '>' => Some(UOp { pri: 0, name: ">", write_lval: true }),
-                '<' => Some(UOp { pri: 0, name: "<", write_lval: false }),
+                '+' => Some(UOp { pri: 16, action: UOpAction::NoOp, write_lval: false }),
+                '-' => Some(UOp { pri: 16, action: UOpAction::Code(code::NEG), write_lval: false }),
+                '!' => Some(UOp { pri: 16, action: UOpAction::Code(code::NOT), write_lval: false }),
+                '~' => Some(UOp { pri: 16, action: UOpAction::Code(code::BINV), write_lval: false }),
+                '#' => Some(UOp { pri: 16, action: UOpAction::Code(code::LEN), write_lval: false }),
+                ':' => Some(UOp { pri: 0, action: UOpAction::Loop, write_lval: false }),
+                '>' => Some(UOp { pri: 0, action: UOpAction::Arg, write_lval: true }),
+                '<' => Some(UOp { pri: 0, action: UOpAction::Return, write_lval: false }),
                 _ => None
             }
-            Token::Shr => Some(UOp { pri: 0, name: ">>", write_lval: true }),
-            Token::Shl => Some(UOp { pri: 0, name: "<<", write_lval: false }),
+            Token::Shr => Some(UOp { pri: 0, action: UOpAction::In, write_lval: true }),
+            Token::Shl => Some(UOp { pri: 0, action: UOpAction::Out, write_lval: false }),
             _ => None
         };
 
@@ -194,29 +264,29 @@ impl<'a> Parser<'a> {
     fn try_bop(&mut self) -> Result<Option<BOp>, ParserError> {
         let bop = match self.lexer.peek()? {
             Token::Single(char) => match char {
-                '+' => Some(BOp::left(14, "+")),
-                '-' => Some(BOp::left(14, "-")),
-                '*' => Some(BOp::left(15, "*")),
-                '/' => Some(BOp::left(15, "/")),
-                '%' => Some(BOp::left(15, "%")),
-                '>' => Some(BOp::left(7, ">")),
-                '<' => Some(BOp::left(7, "<")),
-                '|' => Some(BOp::left(8, "|")),
-                '^' => Some(BOp::left(9, "^")),
-                '&' => Some(BOp::left(10, "&")),
-                '?' => Some(BOp::right(3, "?:")),
-                '=' => Some(BOp::right(1, "=")),
+                '+' => Some(BOp::left_c(14, code::ADD)),
+                '-' => Some(BOp::left_c(14, code::SUB)),
+                '*' => Some(BOp::left_c(15, code::MUL)),
+                '/' => Some(BOp::left_c(15, code::DIV)),
+                '%' => Some(BOp::left_c(15, code::MOD)),
+                '>' => Some(BOp::left_c(7, code:: GT)),
+                '<' => Some(BOp::left_c(7, code ::LT)),
+                '|' => Some(BOp::left_c(8, code::BOR)),
+                '^' => Some(BOp::left_c(9, code::BXOR)),
+                '&' => Some(BOp::left_c(10, code::BAND)),
+                '?' => Some(BOp::right(3, BOpAction::If)),
+                '=' => Some(BOp::right(1, BOpAction::Assign)),
                 _ => None
             },
-            Token::Eq => Some(BOp::left(7, "==")),
-            Token::Ne => Some(BOp::left(7, "!=")),
-            Token::Ge => Some(BOp::left(7, ">=")),
-            Token::Le => Some(BOp::left(7, "<=")),
-            Token::Shl => Some(BOp::left(11, "<<")),
-            Token::Shr => Some(BOp::left(11, ">>")),
-            Token::Ushr => Some(BOp::left(11, ">>>")),
-            Token::Or => Some(BOp::left(5, "||")),
-            Token::And => Some(BOp::left(6, "&&")),
+            Token::Eq => Some(BOp::left_c(7, code::EQ)),
+            Token::Ne => Some(BOp::left_c(7, code::NE)),
+            Token::Ge => Some(BOp::left_c(7, code::GE)),
+            Token::Le => Some(BOp::left_c(7, code::LE)),
+            Token::Shl => Some(BOp::left_c(11, code::SHL)),
+            Token::Shr => Some(BOp::left_c(11, code::SHR)),
+            Token::Ushr => Some(BOp::left_c(11, code::USHR)),
+            Token::Or => Some(BOp::left(5, BOpAction::Or)),
+            Token::And => Some(BOp::left(6, BOpAction::And)),
             _ => None
         };
 
@@ -228,29 +298,36 @@ impl<'a> Parser<'a> {
             Some(uop) => {
                 self.lexer.next()?;
 
-                if uop.name == ":" {
-                    println!("do {{");
+                let mut pos = 0usize;
+
+                if let UOpAction::Loop = uop.action {
+                    pos = self.program.get_pos();
                 }
 
                 let (lval, _) = self.op_expression(uop.pri)?;
 
-                match uop.name {
-                    ":" => println!("}} while nil"),
-                    ">" => println!("push_arg <idx>"),
-                    "<" => println!("return"),
-                    ">>" => println!("in"),
-                    "<<" => {
-                        println!("dup");
-                        println!("out");
+                match uop.action {
+                    UOpAction::NoOp => {}
+                    UOpAction::Loop => {
+                        let delta = jump_delta(self.program.get_pos() - pos, true)?;
+                        self.program.byte(code::JN);
+                        self.program.byte(delta as u8);
+                    },
+                    UOpAction::Arg => self.program.push_arg()?,
+                    UOpAction::Return => self.program.byte(code::RETURN),
+                    UOpAction::In => self.program.byte(code::IN),
+                    UOpAction::Out => {
+                        self.program.byte(code::DUP);
+                        self.program.byte(code::OUT);
                     }
-                    name => println!("uop {name}")
+                    UOpAction::Code(code) => self.program.byte(code)
                 }
 
                 if uop.write_lval {
                     match &lval {
                         Some(lval) => {
-                            println!("dup");
-                            self.write_left_value(&lval);
+                            self.program.byte(code::DUP);
+                            self.write_left_value(&lval)?;
                         }
                         None => return Err(ParserError::NotLeftValue)
                     }
@@ -269,23 +346,24 @@ impl<'a> Parser<'a> {
             }
             self.lexer.next()?;
 
-            if bop.name != "=" {
-                if let Some(lval) = &lval {
-                    self.read_left_value(lval);
+            match bop.action {
+                BOpAction::Assign => {}
+                _ => if let Some(lval) = &lval {
+                    self.read_left_value(lval)?;
                 }
             }
-            match bop.name {
-                "||" => {
+            match bop.action {
+                BOpAction::Or => {
                     println!("dup");
                     println!("if false {{");
                     println!("pop");
                 }
-                "&&" => {
+                BOpAction::And => {
                     println!("dup");
                     println!("if true {{");
                     println!("pop");
                 }
-                "?:" => {
+                BOpAction::If => {
                     println!("if true {{");
                     self.expression()?;
                     self.expect_single(':')?;
@@ -297,19 +375,19 @@ impl<'a> Parser<'a> {
             let (next_lval, next_bop) = self.op_expression(bop.right_pri)?;
 
             if let Some(lval) = &next_lval {
-                self.read_left_value(lval);
+                self.read_left_value(lval)?;
             }
 
-            match bop.name {
-                "=" => match &lval {
+            match bop.action {
+                BOpAction::Assign => match &lval {
                     Some(lval) => {
-                        println!("dup");
-                        self.write_left_value(lval);
+                        self.program.byte(code::DUP);
+                        self.write_left_value(lval)?;
                     }
                     None => return Err(ParserError::NotLeftValue)
                 }
-                "||" | "&&" | "?:" => println!("}}"),
-                _ => println!("bop {}", bop.name)
+                BOpAction::Or | BOpAction::And | BOpAction::If => println!("}}"),
+                BOpAction::Code(code) => self.program.byte(code)
             }
 
             lval = None;
@@ -323,7 +401,7 @@ impl<'a> Parser<'a> {
         let (lval, _) = self.op_expression(0)?;
 
         if let Some(lval) = &lval {
-            self.read_left_value(lval);
+            self.read_left_value(lval)?;
         }
 
         Ok(())
@@ -357,12 +435,12 @@ impl<'a> Parser<'a> {
         while self.lexer.peek()? != ending {
             self.expression()?;
             self.expect_single(';')?;
-            println!("pop");
+            self.program.byte(code::POP);
         }
         self.lexer.next()?;
 
-        println!("push_self");
-        println!("return");
+        self.program.byte(code::PUSH_SELF);
+        self.program.byte(code::RETURN);
 
         println!("}}");
 
@@ -370,7 +448,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-pub fn parse(lexer: Lexer) {
-    let mut parser = Parser { lexer };
+pub fn parse(lexer: Lexer, program: &mut Program) {
+    let mut parser = Parser { lexer, program };
     parser.statement_list(&Token::EOF).unwrap();
 }
