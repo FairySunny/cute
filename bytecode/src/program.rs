@@ -9,7 +9,7 @@ pub enum GeneratingError {
     JumpingTooFar
 }
 
-enum Constant {
+pub enum Constant {
     Int(i64),
     Float(f64),
     String(Rc<String>)
@@ -82,6 +82,11 @@ pub struct Program {
 
 pub struct JumpWhere {
     pos: usize
+}
+
+pub struct ProgramBundle {
+    pub constant_pool: Vec<Constant>,
+    pub func_list: Vec<Vec<u8>>
 }
 
 impl Program {
@@ -190,6 +195,13 @@ impl Program {
             .map_err(|_| GeneratingError::JumpingTooFar)?;
         self.current_func_mut().code[jump.pos] = delta as u8;
         Ok(())
+    }
+
+    pub fn bundle(self) -> ProgramBundle {
+        ProgramBundle {
+            constant_pool: self.constant_pool.constant_list,
+            func_list: self.func_list.into_iter().map(|f| f.code).collect()
+        }
     }
 
     pub fn print(&self) {
