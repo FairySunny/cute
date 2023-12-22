@@ -5,7 +5,8 @@ use crate::code;
 pub enum GeneratingError {
     ConstantPoolExceeding,
     ClosureListExceeding,
-    ArgumentListExceeding
+    ArgumentListExceeding,
+    JumpingTooFar
 }
 
 enum Constant {
@@ -77,6 +78,10 @@ pub struct Program {
     constant_pool: ConstantPool,
     func_list: Vec<Func>,
     idx: Vec<usize>
+}
+
+pub struct JumpWhere {
+    pos: usize
 }
 
 impl Program {
@@ -165,7 +170,53 @@ impl Program {
         self.current_func().code.len()
     }
 
-    pub fn set_pos(&mut self, pos: usize, byte: u8) {
-        self.current_func_mut().code[pos] = byte;
+    pub fn jump_back(&mut self, pos: usize) -> Result<(), GeneratingError> {
+        let delta: i32 = (self.get_pos() - pos).try_into()
+            .map_err(|_| GeneratingError::JumpingTooFar)?;
+        let delta: i8 = (-delta).try_into()
+            .map_err(|_| GeneratingError::JumpingTooFar)?;
+        self.byte(delta as u8);
+        Ok(())
+    }
+
+    pub fn jump_where(&mut self) -> JumpWhere {
+        let pos = self.get_pos();
+        self.byte(0);
+        JumpWhere { pos }
+    }
+
+    pub fn jump_here(&mut self, jump: JumpWhere) -> Result<(), GeneratingError> {
+        let delta: i8 = (self.get_pos() - jump.pos).try_into()
+            .map_err(|_| GeneratingError::JumpingTooFar)?;
+        self.current_func_mut().code[jump.pos] = delta as u8;
+        Ok(())
+    }
+
+    pub fn print(&self) {
+        println!("Constant Pool:");
+        for constant in &self.constant_pool.constant_list {
+            match constant {
+                Constant::Int(v) => println!("  int: {v}"),
+                Constant::Float(v) => println!("  float: {v}"),
+                Constant::String(v) => println!("  string: {v}")
+            }
+        }
+        println!();
+
+        println!("Closures:");
+        for func in &self.func_list {
+            let mut idx = 0;
+            while idx < func.code.len() {
+                let info = &code::CODE_INFO[func.code[idx] as usize];
+                idx += 1;
+                print!("  {}", info.name);
+                for _ in 0..info.params {
+                    print!(" {:#x}", func.code[idx]);
+                    idx += 1;
+                }
+                println!();
+            }
+            println!("  ----");
+        }
     }
 }

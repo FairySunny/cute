@@ -1,5 +1,5 @@
 use crate::lexer::{Lexer, Token, LexerError};
-use bytecode::{code, program::{Program, GeneratingError}};
+use bytecode::{code, program::{Program, GeneratingError, JumpWhere}};
 
 struct Parser<'a, 'b> {
     lexer: Lexer<'a>,
@@ -75,8 +75,7 @@ enum ParserError {
     LexerError(LexerError),
     UnexpectedToken,
     NotLeftValue,
-    GeneratingError(GeneratingError),
-    JumpingTooFar
+    GeneratingError(GeneratingError)
 }
 
 impl From<LexerError> for ParserError {
@@ -88,15 +87,6 @@ impl From<LexerError> for ParserError {
 impl From<GeneratingError> for ParserError {
     fn from(e: GeneratingError) -> Self {
         Self::GeneratingError(e)
-    }
-}
-
-fn jump_delta(delta: usize, backward: bool) -> Result<i8, ParserError> {
-    if backward {
-        let delta: i64 = delta.try_into().map_err(|_| ParserError::JumpingTooFar)?;
-        (-delta).try_into().map_err(|_| ParserError::JumpingTooFar)
-    } else {
-        delta.try_into().map_err(|_| ParserError::JumpingTooFar)
     }
 }
 
@@ -309,9 +299,8 @@ impl<'a, 'b> Parser<'a, 'b> {
                 match uop.action {
                     UOpAction::NoOp => {}
                     UOpAction::Loop => {
-                        let delta = jump_delta(self.program.get_pos() - pos, true)?;
                         self.program.byte(code::JN);
-                        self.program.byte(delta as u8);
+                        self.program.jump_back(pos)?;
                     },
                     UOpAction::Arg => self.program.push_arg()?,
                     UOpAction::Return => self.program.byte(code::RETURN),
@@ -346,6 +335,8 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
             self.lexer.next()?;
 
+            let mut jump: Option<JumpWhere> = None;
+
             match bop.action {
                 BOpAction::Assign => {}
                 _ => if let Some(lval) = &lval {
@@ -354,20 +345,25 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
             match bop.action {
                 BOpAction::Or => {
-                    println!("dup");
-                    println!("if false {{");
-                    println!("pop");
+                    self.program.byte(code::DUP);
+                    self.program.byte(code::JT);
+                    jump = Some(self.program.jump_where());
+                    self.program.byte(code::POP);
                 }
                 BOpAction::And => {
-                    println!("dup");
-                    println!("if true {{");
-                    println!("pop");
+                    self.program.byte(code::DUP);
+                    self.program.byte(code::JF);
+                    jump = Some(self.program.jump_where());
+                    self.program.byte(code::POP);
                 }
                 BOpAction::If => {
-                    println!("if true {{");
+                    self.program.byte(code::JF);
+                    let jump1 = self.program.jump_where();
                     self.expression()?;
                     self.expect_single(':')?;
-                    println!("}} else {{");
+                    self.program.byte(code::JMP);
+                    jump = Some(self.program.jump_where());
+                    self.program.jump_here(jump1)?;
                 }
                 _ => {}
             }
@@ -386,8 +382,10 @@ impl<'a, 'b> Parser<'a, 'b> {
                     }
                     None => return Err(ParserError::NotLeftValue)
                 }
-                BOpAction::Or | BOpAction::And | BOpAction::If => println!("}}"),
-                BOpAction::Code(code) => self.program.byte(code)
+                BOpAction::Or | BOpAction::And | BOpAction::If =>
+                    self.program.jump_here(jump.unwrap())?,
+                BOpAction::Code(code) =>
+                    self.program.byte(code)
             }
 
             lval = None;
@@ -430,8 +428,6 @@ impl<'a, 'b> Parser<'a, 'b> {
     }
 
     fn statement_list(&mut self, ending: &Token) -> Result<(), ParserError> {
-        println!("{{");
-
         while self.lexer.peek()? != ending {
             self.expression()?;
             self.expect_single(';')?;
@@ -441,8 +437,6 @@ impl<'a, 'b> Parser<'a, 'b> {
 
         self.program.byte(code::PUSH_SELF);
         self.program.byte(code::RETURN);
-
-        println!("}}");
 
         Ok(())
     }
