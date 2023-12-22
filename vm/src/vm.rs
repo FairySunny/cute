@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use gc::{Trace, Finalize, Gc, GcCell};
-use bytecode::{program::ProgramBundle, code};
+use bytecode::{program::{ProgramBundle, Constant}, code};
 
-#[derive(Trace, Finalize)]
+#[derive(Debug, Trace, Finalize)]
 struct Variables {
     parent: Option<Gc<Variables>>,
     this: Value
@@ -17,13 +17,13 @@ impl Variables {
     }
 }
 
-#[derive(Clone, Trace, Finalize)]
+#[derive(Debug, Clone, Trace, Finalize)]
 struct Closure {
     parent: Gc<Variables>,
     func_idx: usize
 }
 
-#[derive(Clone, Trace, Finalize)]
+#[derive(Debug, Clone, Trace, Finalize)]
 enum Value {
     Null,
     Int(i64),
@@ -36,8 +36,8 @@ enum Value {
 }
 
 impl Value {
-    fn new_str(s: String) -> Self {
-        Self::String(Gc::new(s))
+    fn new_str(s: impl Into<String>) -> Self {
+        Self::String(Gc::new(s.into()))
     }
 
     fn new_obj() -> Self {
@@ -57,6 +57,14 @@ impl Value {
             *f
         } else {
             panic!("Invalid type: Float expected")
+        }
+    }
+
+    fn as_bool(&self) -> bool {
+        if let Value::Bool(b) = self {
+            *b
+        } else {
+            panic!("Invalid type: Bool expected")
         }
     }
 
@@ -107,6 +115,10 @@ fn this(info: &Vec<StackInfo>) -> &Gc<GcCell<HashMap<String, Value>>> {
     cur_info(info).variables.this.as_obj()
 }
 
+fn parent(info: &Vec<StackInfo>) -> &Gc<GcCell<HashMap<String, Value>>> {
+    cur_info(info).variables.parent.as_ref().unwrap().this.as_obj()
+}
+
 pub fn run_program(program: &ProgramBundle) {
     let mut stack = vec![Value::Null];
     let mut info = vec![
@@ -137,6 +149,14 @@ pub fn run_program(program: &ProgramBundle) {
                     stack.push(Value::Null);
                 }
             }
+            code::LOAD_SUPER => {
+                let str = program.get_string(next(&cur_func, &mut pc)).unwrap();
+                if let Some(v) = parent(&info).borrow().get(str) {
+                    stack.push(v.clone())
+                } else {
+                    stack.push(Value::Null)
+                }
+            }
             code::STORE => {
                 let str = program.get_string(next(&cur_func, &mut pc)).unwrap();
                 if let Value::Null = stack.last().unwrap() {
@@ -145,9 +165,29 @@ pub fn run_program(program: &ProgramBundle) {
                     this(&info).borrow_mut().insert(str.clone(), stack.last().unwrap().clone());
                 }
             }
+            code::STORE_SUPER => {
+                let str = program.get_string(next(&cur_func, &mut pc)).unwrap();
+                if let Value::Null = stack.last().unwrap() {
+                    parent(&info).borrow_mut().remove(str);
+                } else {
+                    parent(&info).borrow_mut().insert(str.clone(), stack.last().unwrap().clone());
+                }
+            }
             code::DUP => stack.push(stack.last().unwrap().clone()),
             code::POP => {
                 stack.pop().unwrap();
+            }
+            code::PUSH_INT => {
+                let i = next(&cur_func, &mut pc) as i8;
+                stack.push(Value::Int(i.into()));
+            }
+            code::PUSH_CONST => {
+                let const_idx: usize = next(&cur_func, &mut pc).into();
+                stack.push(match &program.constant_pool[const_idx] {
+                    Constant::Int(v) => Value::Int(*v),
+                    Constant::Float(v) => Value::Float(*v),
+                    Constant::String(v) => Value::new_str(v)
+                });
             }
             code::PUSH_ARG => {
                 let arg_idx: usize = next(&cur_func, &mut pc).into();
@@ -165,6 +205,28 @@ pub fn run_program(program: &ProgramBundle) {
                     parent: cur_info(&info).variables.clone(),
                     func_idx: idx
                 }));
+            }
+            code::JMP => {
+                let offset = next(&cur_func, &mut pc) as i8;
+                pc = (pc as i64 - 1 + offset as i64) as usize;
+            }
+            code::JN => {
+                let offset = next(&cur_func, &mut pc) as i8;
+                if let Value::Null = stack.pop().unwrap() {
+                    pc = (pc as i64 - 1 + offset as i64) as usize;
+                }
+            }
+            code::JT => {
+                let offset = next(&cur_func, &mut pc) as i8;
+                if stack.pop().unwrap().as_bool() {
+                    pc = (pc as i64 - 1 + offset as i64) as usize;
+                }
+            }
+            code::JF => {
+                let offset = next(&cur_func, &mut pc) as i8;
+                if !stack.pop().unwrap().as_bool() {
+                    pc = (pc as i64 - 1 + offset as i64) as usize;
+                }
             }
             code::CALL => {
                 let arg_cnt: usize = next(&cur_func, &mut pc).into();
@@ -184,7 +246,7 @@ pub fn run_program(program: &ProgramBundle) {
             code::RETURN => {
                 let value = stack.pop().unwrap();
                 let cur_info = cur_info(&info);
-                stack.resize(stack.len() - cur_info.arg_cnt - 2, Value::Null);
+                stack.resize(stack.len() - cur_info.arg_cnt - 1, Value::Null);
                 stack.push(value);
                 if info.len() <= 1 {
                     break;
@@ -201,16 +263,71 @@ pub fn run_program(program: &ProgramBundle) {
                 match v1 {
                     Value::Int(v1) => *v1 += v2.as_int(),
                     Value::Float(v1) => *v1 += v2.as_float(),
-                    Value::String(_) => *v1 = Value::new_str(String::new() + v1.as_str() + v2.as_str()),
+                    Value::String(s) => *v1 = Value::new_str(s.to_string() + v2.as_str()),
                     _ => panic!("Invalid type: (+) Int/Float/String expected")
                 }
+            }
+            code::SUB => {
+                let v2 = stack.pop().unwrap();
+                let v1 = stack.last_mut().unwrap();
+                match v1 {
+                    Value::Int(v1) => *v1 -= v2.as_int(),
+                    Value::Float(v1) => *v1 -= v2.as_float(),
+                    _ => panic!("Invalid type: (-) Int/Float expected")
+                }
+            }
+            code::MUL => {
+                let v2 = stack.pop().unwrap();
+                let v1 = stack.last_mut().unwrap();
+                match v1 {
+                    Value::Int(v1) => *v1 *= v2.as_int(),
+                    Value::Float(v1) => *v1 *= v2.as_float(),
+                    _ => panic!("Invalid type: (*) Int/Float expected")
+                }
+            }
+            code::DIV => {
+                let v2 = stack.pop().unwrap();
+                let v1 = stack.last_mut().unwrap();
+                match v1 {
+                    Value::Int(v1) => *v1 /= v2.as_int(),
+                    Value::Float(v1) => *v1 /= v2.as_float(),
+                    _ => panic!("Invalid type: (/) Int/Float expected")
+                }
+            }
+            code::NEG => {
+                let v = stack.last_mut().unwrap();
+                match v {
+                    Value::Int(v) => *v = -*v,
+                    Value::Float(v) => *v = -*v,
+                    _ => panic!("Invalid type: (-) Int/Float expected")
+                }
+            }
+            code::CMP_GT => {
+                let v2 = stack.pop().unwrap();
+                let v1 = stack.pop().unwrap();
+                stack.push(Value::Bool(match &v1 {
+                    Value::Int(v1) => *v1 > v2.as_int(),
+                    Value::Float(v1) => *v1 > v2.as_float(),
+                    Value::String(s) => s.as_str() > v2.as_str(),
+                    _ => panic!("Invalid type: (>) Int/Float/String expected")
+                }));
+            }
+            code::CMP_LT => {
+                let v2 = stack.pop().unwrap();
+                let v1 = stack.pop().unwrap();
+                stack.push(Value::Bool(match &v1 {
+                    Value::Int(v1) => *v1 < v2.as_int(),
+                    Value::Float(v1) => *v1 < v2.as_float(),
+                    Value::String(s) => s.as_str() < v2.as_str(),
+                    _ => panic!("Invalid type: (<) Int/Float/String expected")
+                }));
             }
             code::IN => {
                 let mut str = String::new();
                 std::io::stdin().read_line(&mut str).unwrap();
                 stack.push(Value::new_str(str));
             }
-            code::OUT => println!("{}", stack.pop().unwrap().as_str()),
+            code::OUT => println!("{:?}", stack.pop().unwrap()),
             _ => panic!("Unknown instruction {:#x}", code)
         }
     }

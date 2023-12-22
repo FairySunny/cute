@@ -35,12 +35,12 @@ pub const DIV: u8 = 0x43;
 pub const MOD: u8 = 0x44;
 pub const NEG: u8 = 0x45;
 
-pub const EQ: u8 = 0x48;
-pub const NE: u8 = 0x49;
-pub const GT: u8 = 0x4a;
-pub const LT: u8 = 0x4b;
-pub const GE: u8 = 0x4c;
-pub const LE: u8 = 0x4d;
+pub const CMP_EQ: u8 = 0x48;
+pub const CMP_NE: u8 = 0x49;
+pub const CMP_GT: u8 = 0x4a;
+pub const CMP_LT: u8 = 0x4b;
+pub const CMP_GE: u8 = 0x4c;
+pub const CMP_LE: u8 = 0x4d;
 pub const NOT: u8 = 0x4e;
 
 pub const BAND: u8 = 0x50;
@@ -135,12 +135,12 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "NEG", params: 0 },
     CodeInfo { name: "0x46", params: 0 },
     CodeInfo { name: "0x47", params: 0 },
-    CodeInfo { name: "EQ", params: 0 },
-    CodeInfo { name: "NE", params: 0 },
-    CodeInfo { name: "GT", params: 0 },
-    CodeInfo { name: "LT", params: 0 },
-    CodeInfo { name: "GE", params: 0 },
-    CodeInfo { name: "LE", params: 0 },
+    CodeInfo { name: "CMP_EQ", params: 0 },
+    CodeInfo { name: "CMP_NE", params: 0 },
+    CodeInfo { name: "CMP_GT", params: 0 },
+    CodeInfo { name: "CMP_LT", params: 0 },
+    CodeInfo { name: "CMP_GE", params: 0 },
+    CodeInfo { name: "CMP_LE", params: 0 },
     CodeInfo { name: "NOT", params: 0 },
     CodeInfo { name: "0x4f", params: 0 },
     CodeInfo { name: "BAND", params: 0 },
