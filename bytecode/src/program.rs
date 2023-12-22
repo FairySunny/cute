@@ -1,4 +1,4 @@
-use std::{rc::Rc, collections::HashMap};
+use std::collections::HashMap;
 use crate::code;
 
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub enum GeneratingError {
 pub enum Constant {
     Int(i64),
     Float(f64),
-    String(Rc<String>)
+    String(String)
 }
 
 struct ConstantPool {
@@ -47,7 +47,7 @@ impl ConstantPool {
         }
         // string does not exist, create
         let idx = self.constant_list.len();
-        self.constant_list.push(Constant::String(Rc::new(s.to_owned())));
+        self.constant_list.push(Constant::String(s.to_owned()));
         self.str_map.insert(s.to_owned(), idx);
         idx
     }
@@ -82,11 +82,6 @@ pub struct Program {
 
 pub struct JumpWhere {
     pos: usize
-}
-
-pub struct ProgramBundle {
-    pub constant_pool: Vec<Constant>,
-    pub func_list: Vec<Vec<u8>>
 }
 
 impl Program {
@@ -229,6 +224,21 @@ impl Program {
                 println!();
             }
             println!("  ----");
+        }
+    }
+}
+
+pub struct ProgramBundle {
+    pub constant_pool: Vec<Constant>,
+    pub func_list: Vec<Vec<u8>>
+}
+
+impl ProgramBundle {
+    pub fn get_string(&self, idx: u8) -> Option<&String> {
+        if let Constant::String(s) = &self.constant_pool[idx as usize] {
+            Some(s)
+        } else {
+            None
         }
     }
 }
