@@ -84,6 +84,11 @@ pub struct JumpWhere {
     pos: usize
 }
 
+pub struct ProgramBundle {
+    pub constant_pool: Vec<Constant>,
+    pub func_list: Vec<Vec<u8>>
+}
+
 impl Program {
     fn current_func(&self) -> &Func {
         &self.func_list[*self.idx.last().unwrap()]
@@ -224,21 +229,6 @@ impl Program {
                 println!();
             }
             println!("  ----");
-        }
-    }
-}
-
-pub struct ProgramBundle {
-    pub constant_pool: Vec<Constant>,
-    pub func_list: Vec<Vec<u8>>
-}
-
-impl ProgramBundle {
-    pub fn get_string(&self, idx: u8) -> Option<&String> {
-        if let Constant::String(s) = &self.constant_pool[idx as usize] {
-            Some(s)
-        } else {
-            None
         }
     }
 }
