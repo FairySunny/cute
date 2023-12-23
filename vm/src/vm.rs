@@ -14,7 +14,44 @@ pub enum VMError {
     InvalidType { expected: &'static str, got: &'static str },
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
-    UnknownLibrary(String)
+    UnknownLibrary(String),
+    ObjectLocked
+}
+
+#[derive(Debug, Trace, Finalize)]
+pub struct Lockable<T> {
+    data: T,
+    locked: bool
+}
+
+impl<T> Lockable<T> {
+    pub fn new(data: T, locked: bool) -> Self {
+        Self { data, locked }
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked
+    }
+
+    pub fn lock(&mut self) {
+        self.locked = true;
+    }
+
+    pub fn unlock(&mut self) {
+        self.locked = false;
+    }
+
+    pub fn get(&self) -> &T {
+        &self.data
+    }
+
+    pub fn get_mut(&mut self) -> Result<&mut T, VMError> {
+        if self.locked {
+            Err(VMError::ObjectLocked)
+        } else {
+            Ok(&mut self.data)
+        }
+    }
 }
 
 #[derive(Debug, Trace, Finalize)]
@@ -31,7 +68,7 @@ impl Variables {
         }
     }
 
-    fn this_obj(&self) -> &Gc<GcCell<HashMap<String, Value>>> {
+    fn this_obj(&self) -> &Gc<GcCell<Lockable<HashMap<String, Value>>>> {
         self.this.as_obj().expect("`Variables.this` is not object")
     }
 }
@@ -49,8 +86,8 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     String(Gc<String>),
-    Object(Gc<GcCell<HashMap<String, Value>>>),
-    Array(Gc<GcCell<Vec<Value>>>),
+    Object(Gc<GcCell<Lockable<HashMap<String, Value>>>>),
+    Array(Gc<GcCell<Lockable<Vec<Value>>>>),
     Closure(Closure)
 }
 
@@ -73,11 +110,11 @@ impl Value {
     }
 
     pub fn new_obj() -> Self {
-        Self::Object(Gc::new(GcCell::new(HashMap::new())))
+        Self::Object(Gc::new(GcCell::new(Lockable::new(HashMap::new(), false))))
     }
 
     pub fn new_arr(a: Vec<Value>) -> Self {
-        Self::Array(Gc::new(GcCell::new(a)))
+        Self::Array(Gc::new(GcCell::new(Lockable::new(a, false))))
     }
 
     pub fn as_int(&self) -> Result<i64, VMError> {
@@ -115,10 +152,17 @@ impl Value {
         }
     }
 
-    pub fn as_obj(&self) -> Result<&Gc<GcCell<HashMap<String, Value>>>, VMError> {
+    pub fn as_obj(&self) -> Result<&Gc<GcCell<Lockable<HashMap<String, Value>>>>, VMError> {
         match self {
             Value::Object(o) => Ok(o),
             _ => Err(VMError::InvalidType { expected: "object", got: self.type_to_str() })
+        }
+    }
+
+    pub fn as_arr(&self) -> Result<&Gc<GcCell<Lockable<Vec<Value>>>>, VMError> {
+        match self {
+            Value::Array(a) => Ok(a),
+            _ => Err(VMError::InvalidType { expected: "array", got: self.type_to_str() })
         }
     }
 
@@ -250,11 +294,11 @@ fn cur_info(info: &Vec<StackInfo>) -> &StackInfo {
     info.last().expect("`info` is empty")
 }
 
-fn this(info: &Vec<StackInfo>) -> &Gc<GcCell<HashMap<String, Value>>> {
+fn this(info: &Vec<StackInfo>) -> &Gc<GcCell<Lockable<HashMap<String, Value>>>> {
     cur_info(info).variables.this_obj()
 }
 
-fn parent(info: &Vec<StackInfo>) -> Result<&Gc<GcCell<HashMap<String, Value>>>, VMError> {
+fn parent(info: &Vec<StackInfo>) -> Result<&Gc<GcCell<Lockable<HashMap<String, Value>>>>, VMError> {
     Ok(cur_info(info).variables.parent.as_ref()
         .ok_or_else(|| VMError::SuperDoesNotExist)?
         .this_obj())
@@ -288,14 +332,14 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
         match code {
             code::LOAD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match this(&info).borrow().get(str) {
+                match this(&info).borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
             }
             code::LOAD_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match parent(&info)?.borrow().get(str) {
+                match parent(&info)?.borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
@@ -303,7 +347,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             code::LOAD_FIELD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let obj = stack_pop(&mut stack, ptr)?;
-                match obj.as_obj()?.borrow().get(str) {
+                match obj.as_obj()?.borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 };
@@ -314,7 +358,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 match &obj {
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
-                        match o.borrow().get(idx) {
+                        match o.borrow().get().get(idx) {
                             Some(v) => stack.push(v.clone()),
                             None => stack.push(Value::Null)
                         }
@@ -322,7 +366,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                     Value::Array(a) => {
                         let idx: usize = idx.as_int()?.try_into()
                             .map_err(|_| VMError::ArrayIndexOutOfBound)?;
-                        stack.push(a.borrow().get(idx)
+                        stack.push(a.borrow().get().get(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
                             .clone());
                     }
@@ -336,8 +380,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let value = stack_pop(&mut stack, ptr)?;
                 match &value {
-                    Value::Null => this(&info).borrow_mut().remove(str),
-                    _ => this(&info).borrow_mut()
+                    Value::Null => this(&info).borrow_mut().get_mut()?.remove(str),
+                    _ => this(&info).borrow_mut().get_mut()?
                         .insert(str.to_owned(), value)
                 };
             }
@@ -345,8 +389,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let value = stack_pop(&mut stack, ptr)?;
                 match &value {
-                    Value::Null => parent(&info)?.borrow_mut().remove(str),
-                    _ => parent(&info)?.borrow_mut()
+                    Value::Null => parent(&info)?.borrow_mut().get_mut()?.remove(str),
+                    _ => parent(&info)?.borrow_mut().get_mut()?
                         .insert(str.to_owned(), value)
                 };
             }
@@ -355,8 +399,9 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 let value = stack_pop(&mut stack, ptr)?;
                 let obj = stack_pop(&mut stack, ptr)?;
                 match &value {
-                    Value::Null => obj.as_obj()?.borrow_mut().remove(str),
-                    _ => obj.as_obj()?.borrow_mut().insert(str.to_owned(), value.clone())
+                    Value::Null => obj.as_obj()?.borrow_mut().get_mut()?.remove(str),
+                    _ => obj.as_obj()?.borrow_mut().get_mut()?
+                        .insert(str.to_owned(), value.clone())
                 };
             }
             code::STORE_ITEM => {
@@ -367,14 +412,15 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
                         match &value {
-                            Value::Null => o.borrow_mut().remove(idx),
-                            _ => o.borrow_mut().insert(idx.to_owned(), value.clone())
+                            Value::Null => o.borrow_mut().get_mut()?.remove(idx),
+                            _ => o.borrow_mut().get_mut()?
+                                .insert(idx.to_owned(), value.clone())
                         };
                     }
                     Value::Array(a) => {
                         let idx: usize = idx.as_int()?.try_into()
                             .map_err(|_| VMError::ArrayIndexOutOfBound)?;
-                        *a.borrow_mut().get_mut(idx)
+                        *a.borrow_mut().get_mut()?.get_mut(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
                     }
                     _ => return Err(VMError::InvalidType {
@@ -644,8 +690,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 let v = stack_pop(&mut stack, ptr)?;
                 let len = match &v {
                     Value::String(s) => s.len(),
-                    Value::Object(o) => o.borrow().len(),
-                    Value::Array(a) => a.borrow().len(),
+                    Value::Object(o) => o.borrow().get().len(),
+                    Value::Array(a) => a.borrow().get().len(),
                     _ => return Err(VMError::InvalidType {
                         expected: "string/object/array",
                         got: v.type_to_str()
@@ -656,6 +702,9 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             code::IN => {
                 let mut str = String::new();
                 std::io::stdin().read_line(&mut str).expect("`stdin.read_line` failed");
+                if str.ends_with("\n") {
+                    str.truncate(str.len() - 1);
+                }
                 stack.push(Value::new_str(str));
             }
             code::OUT => {
