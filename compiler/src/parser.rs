@@ -127,18 +127,24 @@ impl<'a, 'b> Parser<'a, 'b> {
     fn write_left_value(&mut self, lval: &LeftValue) -> Result<(), ParserError> {
         match lval {
             LeftValue::Variable(name) => {
+                self.program.byte(code::DUP);
                 self.program.byte(code::STORE);
                 self.program.str(name)?;
             },
             LeftValue::Super(name) => {
+                self.program.byte(code::DUP);
                 self.program.byte(code::STORE_SUPER);
                 self.program.str(name)?;
             },
             LeftValue::Field(name) => {
+                self.program.byte(code::DUP_PRE2);
                 self.program.byte(code::STORE_FIELD);
                 self.program.str(name)?;
             },
-            LeftValue::Item => self.program.byte(code::STORE_ITEM)
+            LeftValue::Item => {
+                self.program.byte(code::DUP_PRE3);
+                self.program.byte(code::STORE_ITEM);
+            }
         }
         Ok(())
     }
@@ -312,18 +318,15 @@ impl<'a, 'b> Parser<'a, 'b> {
                     UOpAction::Return => self.program.byte(code::RETURN),
                     UOpAction::In => self.program.byte(code::IN),
                     UOpAction::Out => {
+                        self.program.byte(code::DUP);
                         self.program.byte(code::OUT);
-                        self.program.byte(code::PUSH_NULL);
                     }
                     UOpAction::Code(code) => self.program.byte(code)
                 }
 
                 if uop.write_lval {
                     match &lval {
-                        Some(lval) => {
-                            self.write_left_value(&lval)?;
-                            self.program.byte(code::PUSH_NULL);
-                        }
+                        Some(lval) => self.write_left_value(&lval)?,
                         None => return Err(ParserError::NotLeftValue)
                     }
                 }
@@ -382,10 +385,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 
             match bop.action {
                 BOpAction::Assign => match &lval {
-                    Some(lval) => {
-                        self.write_left_value(lval)?;
-                        self.program.byte(code::PUSH_NULL);
-                    }
+                    Some(lval) => self.write_left_value(lval)?,
                     None => return Err(ParserError::NotLeftValue)
                 }
                 BOpAction::Or | BOpAction::And | BOpAction::If =>

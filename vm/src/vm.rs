@@ -332,10 +332,21 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
                 }
             }
             code::DUP => stack.push(stack_top(&stack, ptr)?.clone()),
+            code::DUP_PRE2 => {
+                if stack.len() < ptr + 2 {
+                    return Err(VMError::BadStack);
+                }
+                stack.insert(stack.len() - 2, stack.last().unwrap().clone());
+            }
+            code::DUP_PRE3 => {
+                if stack.len() < ptr + 3 {
+                    return Err(VMError::BadStack);
+                }
+                stack.insert(stack.len() - 3, stack.last().unwrap().clone());
+            }
             code::POP => {
                 stack_pop(&mut stack, ptr)?;
             }
-            code::PUSH_NULL => stack.push(Value::Null),
             code::PUSH_INT => {
                 let i = next(&cur_func, &mut pc)? as i8;
                 stack.push(Value::Int(i.into()));
