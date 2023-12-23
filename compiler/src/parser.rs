@@ -280,7 +280,6 @@ impl<'a, 'b> Parser<'a, 'b> {
             Token::Le => Some(BOp::left_c(7, code::CMP_LE)),
             Token::Shl => Some(BOp::left_c(11, code::SHL)),
             Token::Shr => Some(BOp::left_c(11, code::SHR)),
-            Token::Ushr => Some(BOp::left_c(11, code::USHR)),
             Token::Or => Some(BOp::left(5, BOpAction::Or)),
             Token::And => Some(BOp::left(6, BOpAction::And)),
             _ => None

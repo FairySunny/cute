@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::{program::{ProgramBundle, Constant}, code};
+use crate::std::misc;
 
 #[derive(Debug)]
 pub enum VMError {
@@ -12,7 +13,8 @@ pub enum VMError {
     BadStack,
     InvalidType { expected: &'static str, got: &'static str },
     ArrayIndexOutOfBound,
-    SuperDoesNotExist
+    SuperDoesNotExist,
+    UnknownLibrary(String)
 }
 
 #[derive(Debug, Trace, Finalize)]
@@ -35,13 +37,13 @@ impl Variables {
 }
 
 #[derive(Debug, Clone, Trace, Finalize)]
-struct Closure {
+pub struct Closure {
     parent: Gc<Variables>,
     func_idx: usize
 }
 
 #[derive(Debug, Clone, Trace, Finalize)]
-enum Value {
+pub enum Value {
     Null,
     Int(i64),
     Float(f64),
@@ -53,7 +55,7 @@ enum Value {
 }
 
 impl Value {
-    fn type_to_str(&self) -> &'static str {
+    pub fn type_to_str(&self) -> &'static str {
         match self {
             Self::Null => "null",
             Self::Int(_) => "int",
@@ -66,61 +68,106 @@ impl Value {
         }
     }
 
-    fn new_str(s: impl Into<String>) -> Self {
+    pub fn new_str(s: impl Into<String>) -> Self {
         Self::String(Gc::new(s.into()))
     }
 
-    fn new_obj() -> Self {
+    pub fn new_obj() -> Self {
         Self::Object(Gc::new(GcCell::new(HashMap::new())))
     }
 
-    fn new_arr(a: Vec<Value>) -> Self {
+    pub fn new_arr(a: Vec<Value>) -> Self {
         Self::Array(Gc::new(GcCell::new(a)))
     }
 
-    fn as_int(&self) -> Result<i64, VMError> {
+    pub fn as_int(&self) -> Result<i64, VMError> {
         match self {
             Value::Int(i) => Ok(*i),
             _ => Err(VMError::InvalidType { expected: "int", got: self.type_to_str() })
         }
     }
 
-    fn as_float(&self) -> Result<f64, VMError> {
+    pub fn as_int_mut(&mut self) -> Result<&mut i64, VMError> {
+        match self {
+            Value::Int(i) => Ok(i),
+            _ => Err(VMError::InvalidType { expected: "int", got: self.type_to_str() })
+        }
+    }
+
+    pub fn as_float(&self) -> Result<f64, VMError> {
         match self {
             Value::Float(f) => Ok(*f),
             _ => Err(VMError::InvalidType { expected: "float", got: self.type_to_str() })
         }
     }
 
-    fn as_bool(&self) -> Result<bool, VMError> {
+    pub fn as_bool(&self) -> Result<bool, VMError> {
         match self {
             Value::Bool(b) => Ok(*b),
             _ => Err(VMError::InvalidType { expected: "bool", got: self.type_to_str() })
         }
     }
 
-    fn as_str(&self) -> Result<&str, VMError> {
+    pub fn as_str(&self) -> Result<&str, VMError> {
         match self {
             Value::String(s) => Ok(s),
             _ => Err(VMError::InvalidType { expected: "string", got: self.type_to_str() })
         }
     }
 
-    fn as_obj(&self) -> Result<&Gc<GcCell<HashMap<String, Value>>>, VMError> {
+    pub fn as_obj(&self) -> Result<&Gc<GcCell<HashMap<String, Value>>>, VMError> {
         match self {
             Value::Object(o) => Ok(o),
             _ => Err(VMError::InvalidType { expected: "object", got: self.type_to_str() })
         }
     }
 
-    fn as_closure(&self) -> Result<&Closure, VMError> {
+    pub fn as_closure(&self) -> Result<&Closure, VMError> {
         match self {
             Value::Closure(c) => Ok(c),
             _ => Err(VMError::InvalidType { expected: "closure", got: self.type_to_str() })
         }
     }
 
-    fn cmp_gt(&self, other: &Value) -> Result<bool, VMError> {
+    pub fn cmp_eq(&self, other: &Value) -> bool {
+        match self {
+            Value::Null => match other {
+                Value::Null => true,
+                _ => false
+            }
+            Value::Int(v) => match other {
+                Value::Int(v2) => v == v2,
+                _ => false
+            }
+            Value::Float(v) => match other {
+                Value::Float(v2) => v == v2,
+                _ => false
+            }
+            Value::Bool(v) => match other {
+                Value::Bool(v2) => v == v2,
+                _ => false
+            }
+            Value::String(v) => match other {
+                Value::String(v2) => v == v2,
+                _ => false
+            }
+            Value::Object(v) => match other {
+                Value::Object(v2) => Gc::ptr_eq(v, v2),
+                _ => false
+            }
+            Value::Array(v) => match other {
+                Value::Array(v2) => Gc::ptr_eq(v, v2),
+                _ => false
+            }
+            Value::Closure(v) => match other {
+                Value::Closure(v2) =>
+                    v.func_idx == v2.func_idx && Gc::ptr_eq(&v.parent, &v2.parent),
+                _ => false
+            }
+        }
+    }
+
+    pub fn cmp_gt(&self, other: &Value) -> Result<bool, VMError> {
         Ok(match self {
             Value::Int(i) => *i > other.as_int()?,
             Value::Float(f) => *f > other.as_float()?,
@@ -132,7 +179,7 @@ impl Value {
         })
     }
 
-    fn cmp_lt(&self, other: &Value) -> Result<bool, VMError> {
+    pub fn cmp_lt(&self, other: &Value) -> Result<bool, VMError> {
         Ok(match self {
             Value::Int(i) => *i < other.as_int()?,
             Value::Float(f) => *f < other.as_float()?,
@@ -213,7 +260,7 @@ fn parent(info: &Vec<StackInfo>) -> Result<&Gc<GcCell<HashMap<String, Value>>>, 
         .this_obj())
 }
 
-pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
+pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
     let mut stack = vec![Value::Null];
     let mut info = vec![
         StackInfo {
@@ -224,6 +271,9 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
             pc_return: 0
         }
     ];
+
+    let mut libs = HashMap::new();
+    misc::load_libs(&mut libs);
 
     let mut func_idx = 0usize;
     let mut cur_func = Box::new(program.func_list.get(func_idx)
@@ -504,6 +554,11 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
                     })
                 }
             }
+            code::MOD => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
+                *v1.as_int_mut()? %= v2.as_int()?;
+            }
             code::NEG => {
                 let v = stack_top_mut(&mut stack, ptr)?;
                 match v {
@@ -514,6 +569,16 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
                         got: v.type_to_str()
                     })
                 }
+            }
+            code::CMP_EQ => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_pop(&mut stack, ptr)?;
+                stack.push(Value::Bool(v1.cmp_eq(&v2)));
+            }
+            code::CMP_NE => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_pop(&mut stack, ptr)?;
+                stack.push(Value::Bool(!v1.cmp_eq(&v2)));
             }
             code::CMP_GT => {
                 let v2 = stack_pop(&mut stack, ptr)?;
@@ -535,6 +600,59 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
                 let v1 = stack_pop(&mut stack, ptr)?;
                 stack.push(Value::Bool(!v1.cmp_gt(&v2)?));
             }
+            code::NOT => {
+                let v = stack_top_mut(&mut stack, ptr)?;
+                match v {
+                    Value::Bool(b) => *b = !*b,
+                    _ => return Err(VMError::InvalidType {
+                        expected: "bool",
+                        got: v.type_to_str()
+                    })
+                }
+            }
+            code::BAND => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
+                *v1.as_int_mut()? &= v2.as_int()?;
+            }
+            code::BOR => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
+                *v1.as_int_mut()? |= v2.as_int()?;
+            }
+            code::BXOR => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
+                *v1.as_int_mut()? ^= v2.as_int()?;
+            }
+            code::BINV => {
+                let v = stack_top_mut(&mut stack, ptr)?;
+                let i = v.as_int_mut()?;
+                *i = !*i;
+            }
+            code::SHL => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
+                *v1.as_int_mut()? <<= v2.as_int()?;
+            }
+            code::SHR => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
+                *v1.as_int_mut()? >>= v2.as_int()?;
+            }
+            code::LEN => {
+                let v = stack_pop(&mut stack, ptr)?;
+                let len = match &v {
+                    Value::String(s) => s.len(),
+                    Value::Object(o) => o.borrow().len(),
+                    Value::Array(a) => a.borrow().len(),
+                    _ => return Err(VMError::InvalidType {
+                        expected: "string/object/array",
+                        got: v.type_to_str()
+                    })
+                };
+                stack.push(Value::Int(len as i64));
+            }
             code::IN => {
                 let mut str = String::new();
                 std::io::stdin().read_line(&mut str).expect("`stdin.read_line` failed");
@@ -551,14 +669,17 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
                     _ => println!("{:?}", value)
                 }
             },
+            code::LOAD_LIB => {
+                let str = next_str(&cur_func, &mut pc, program)?;
+                stack.push(libs.get(str)
+                    .ok_or_else(|| VMError::UnknownLibrary(str.to_owned()))?
+                    .clone());
+            }
             _ => return Err(VMError::UnknownInstruction(code))
         }
     }
 
     assert!(stack.len() == 1);
 
-    match stack[0] {
-        Value::Int(code) => Ok(code as i32),
-        _ => Ok(0)
-    }
+    Ok(())
 }

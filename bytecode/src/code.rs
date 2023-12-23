@@ -52,7 +52,6 @@ pub const BXOR: u8 = 0x52;
 pub const BINV: u8 = 0x53;
 pub const SHL: u8 = 0x54;
 pub const SHR: u8 = 0x55;
-pub const USHR: u8 = 0x56;
 
 pub const LEN: u8 = 0x58;
 
@@ -152,7 +151,7 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "BINV", params: 0 },
     CodeInfo { name: "SHL", params: 0 },
     CodeInfo { name: "SHR", params: 0 },
-    CodeInfo { name: "USHR", params: 0 },
+    CodeInfo { name: "0x56", params: 0 },
     CodeInfo { name: "0x57", params: 0 },
     CodeInfo { name: "LEN", params: 0 },
     CodeInfo { name: "0x59", params: 0 },

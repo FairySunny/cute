@@ -6,7 +6,7 @@ pub struct Lexer<'a> {
 #[derive(PartialEq, Debug)]
 pub enum Token {
     Eq, Ne, Ge, Le, And, Or,
-    Shl, Shr, Ushr,
+    Shl, Shr,
     Single(char),
     Integer(i64),
     Float(f64),
@@ -227,10 +227,7 @@ impl<'a> Lexer<'a> {
                     }
                     Some('>') => {
                         self.input.next();
-                        match self.input.next_if_eq(&'>') {
-                            Some(_) => Token::Ushr,
-                            None => Token::Shr
-                        }
+                        Token::Shr
                     }
                     _ => Token::Single('>')
                 }

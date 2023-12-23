@@ -205,30 +205,36 @@ impl Program {
     }
 
     pub fn print(&self) {
-        println!("Constant Pool:");
-        for constant in &self.constant_pool.constant_list {
+        eprintln!("Constant Pool:");
+        eprintln!();
+        for (idx, constant) in self.constant_pool.constant_list.iter().enumerate() {
+            eprint!("  #{idx} ");
             match constant {
-                Constant::Int(v) => println!("  int: {v}"),
-                Constant::Float(v) => println!("  float: {v}"),
-                Constant::String(v) => println!("  string: {v}")
+                Constant::Int(v) => eprintln!("int: {v}"),
+                Constant::Float(v) => eprintln!("float: {v}"),
+                Constant::String(v) => eprintln!("string: {v}")
             }
         }
-        println!();
+        eprintln!();
+        eprintln!();
 
-        println!("Closures:");
-        for func in &self.func_list {
+        eprintln!("Closures:");
+        for (idx, func) in self.func_list.iter().enumerate() {
+            eprintln!();
+            eprintln!("  #{idx}:");
             let mut idx = 0;
             while idx < func.code.len() {
                 let info = &code::CODE_INFO[func.code[idx] as usize];
                 idx += 1;
-                print!("  {}", info.name);
+                eprint!("    {}", info.name);
                 for _ in 0..info.params {
-                    print!(" {:#x}", func.code[idx]);
+                    eprint!(" {:#x}", func.code[idx]);
                     idx += 1;
                 }
-                println!();
+                eprintln!();
             }
-            println!("  ----");
         }
+        eprintln!();
+        eprintln!();
     }
 }
