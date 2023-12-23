@@ -153,19 +153,28 @@ fn get_constant(program: &ProgramBundle, idx: usize) -> Result<&Constant, VMErro
         .ok_or_else(|| VMError::ConstantIndexOutOfBound)
 }
 
-fn stack_top(stack: &Vec<Value>) -> Result<&Value, VMError> {
-    stack.last()
-        .ok_or_else(|| VMError::BadStack)
+fn stack_top(stack: &Vec<Value>, ptr: usize) -> Result<&Value, VMError> {
+    if stack.len() <= ptr {
+        Err(VMError::BadStack)
+    } else {
+        Ok(stack.last().unwrap())
+    }
 }
 
-fn stack_top_mut(stack: &mut Vec<Value>) -> Result<&mut Value, VMError> {
-    stack.last_mut()
-        .ok_or_else(|| VMError::BadStack)
+fn stack_top_mut(stack: &mut Vec<Value>, ptr: usize) -> Result<&mut Value, VMError> {
+    if stack.len() <= ptr {
+        Err(VMError::BadStack)
+    } else {
+        Ok(stack.last_mut().unwrap())
+    }
 }
 
-fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
-    stack.pop()
-        .ok_or_else(|| VMError::BadStack)
+fn stack_pop(stack: &mut Vec<Value>, ptr: usize) -> Result<Value, VMError> {
+    if stack.len() <= ptr {
+        Err(VMError::BadStack)
+    } else {
+        Ok(stack.pop().unwrap())
+    }
 }
 
 fn cur_info(info: &Vec<StackInfo>) -> &StackInfo {
@@ -182,7 +191,7 @@ fn parent(info: &Vec<StackInfo>) -> Result<&Gc<GcCell<HashMap<String, Value>>>, 
         .this_obj())
 }
 
-pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
+pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
     let mut stack = vec![Value::Null];
     let mut info = vec![
         StackInfo {
@@ -223,23 +232,23 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             }
             code::STORE => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                if let Value::Null = stack_top(&stack)? {
+                if let Value::Null = stack_top(&stack, ptr)? {
                     this(&info).borrow_mut().remove(str);
                 } else {
-                    this(&info).borrow_mut().insert(str.to_owned(), stack_top(&stack)?.clone());
+                    this(&info).borrow_mut().insert(str.to_owned(), stack_top(&stack, ptr)?.clone());
                 }
             }
             code::STORE_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                if let Value::Null = stack_top(&stack)? {
+                if let Value::Null = stack_top(&stack, ptr)? {
                     parent(&info)?.borrow_mut().remove(str);
                 } else {
-                    parent(&info)?.borrow_mut().insert(str.to_owned(), stack_top(&stack)?.clone());
+                    parent(&info)?.borrow_mut().insert(str.to_owned(), stack_top(&stack, ptr)?.clone());
                 }
             }
-            code::DUP => stack.push(stack_top(&stack)?.clone()),
+            code::DUP => stack.push(stack_top(&stack, ptr)?.clone()),
             code::POP => {
-                stack_pop(&mut stack)?;
+                stack_pop(&mut stack, ptr)?;
             }
             code::PUSH_INT => {
                 let i = next(&cur_func, &mut pc)? as i8;
@@ -257,9 +266,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 let arg_idx: usize = next(&cur_func, &mut pc)?.into();
                 let arg_cnt = cur_info(&info).arg_cnt;
                 if arg_idx < arg_cnt {
-                    stack.push(stack.get(ptr - arg_cnt + arg_idx)
-                        .ok_or_else(|| VMError::BadStack)?
-                        .clone());
+                    stack.push(stack[ptr - arg_cnt + arg_idx].clone());
                 } else {
                     stack.push(Value::Null);
                 }
@@ -278,27 +285,28 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             }
             code::JN => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if let Value::Null = stack_pop(&mut stack)? {
+                if let Value::Null = stack_pop(&mut stack, ptr)? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JT => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if stack_pop(&mut stack)?.as_bool()? {
+                if stack_pop(&mut stack, ptr)?.as_bool()? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JF => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if !stack_pop(&mut stack)?.as_bool()? {
+                if !stack_pop(&mut stack, ptr)?.as_bool()? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::CALL => {
                 let arg_cnt: usize = next(&cur_func, &mut pc)?.into();
-                let closure = stack.get(stack.len() - 1 - arg_cnt)
-                    .ok_or_else(|| VMError::BadStack)?
-                    .as_closure()?;
+                if stack.len() < ptr + 1 + arg_cnt {
+                    return Err(VMError::BadStack);
+                }
+                let closure = stack[stack.len() - arg_cnt - 1].as_closure()?;
                 info.push(StackInfo {
                     variables: Gc::new(Variables::new(Some(&closure.parent))),
                     arg_cnt,
@@ -313,9 +321,9 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 ptr = stack.len();
             }
             code::RETURN => {
-                let value = stack_pop(&mut stack)?;
+                let value = stack_pop(&mut stack, ptr)?;
                 let cur_info = cur_info(&info);
-                stack.resize(stack.len() - cur_info.arg_cnt - 1, Value::Null);
+                stack.resize(ptr - cur_info.arg_cnt - 1, Value::Null);
                 stack.push(value);
                 if info.len() <= 1 {
                     break;
@@ -328,8 +336,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 info.pop();
             }
             code::ADD => {
-                let v2 = stack_pop(&mut stack)?;
-                let v1 = stack_top_mut(&mut stack)?;
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
                 match v1 {
                     Value::Int(v1) => *v1 += v2.as_int()?,
                     Value::Float(v1) => *v1 += v2.as_float()?,
@@ -341,8 +349,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::SUB => {
-                let v2 = stack_pop(&mut stack)?;
-                let v1 = stack_top_mut(&mut stack)?;
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
                 match v1 {
                     Value::Int(v1) => *v1 -= v2.as_int()?,
                     Value::Float(v1) => *v1 -= v2.as_float()?,
@@ -353,8 +361,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::MUL => {
-                let v2 = stack_pop(&mut stack)?;
-                let v1 = stack_top_mut(&mut stack)?;
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
                 match v1 {
                     Value::Int(v1) => *v1 *= v2.as_int()?,
                     Value::Float(v1) => *v1 *= v2.as_float()?,
@@ -365,8 +373,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::DIV => {
-                let v2 = stack_pop(&mut stack)?;
-                let v1 = stack_top_mut(&mut stack)?;
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_top_mut(&mut stack, ptr)?;
                 match v1 {
                     Value::Int(v1) => *v1 /= v2.as_int()?,
                     Value::Float(v1) => *v1 /= v2.as_float()?,
@@ -377,7 +385,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::NEG => {
-                let v = stack_top_mut(&mut stack)?;
+                let v = stack_top_mut(&mut stack, ptr)?;
                 match v {
                     Value::Int(v) => *v = -*v,
                     Value::Float(v) => *v = -*v,
@@ -388,8 +396,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::CMP_GT => {
-                let v2 = stack_pop(&mut stack)?;
-                let v1 = stack_pop(&mut stack)?;
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_pop(&mut stack, ptr)?;
                 stack.push(Value::Bool(match &v1 {
                     Value::Int(v1) => *v1 > v2.as_int()?,
                     Value::Float(v1) => *v1 > v2.as_float()?,
@@ -401,8 +409,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }));
             }
             code::CMP_LT => {
-                let v2 = stack_pop(&mut stack)?;
-                let v1 = stack_pop(&mut stack)?;
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_pop(&mut stack, ptr)?;
                 stack.push(Value::Bool(match &v1 {
                     Value::Int(v1) => *v1 < v2.as_int()?,
                     Value::Float(v1) => *v1 < v2.as_float()?,
@@ -418,10 +426,16 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 std::io::stdin().read_line(&mut str).expect("`stdin.read_line` failed");
                 stack.push(Value::new_str(str));
             }
-            code::OUT => println!("{:?}", stack_pop(&mut stack)?),
+            code::OUT => println!("{:?}", stack_pop(&mut stack, ptr)?),
             _ => return Err(VMError::UnknownInstruction(code))
         }
     }
 
-    Ok(())
+    assert!(stack.len() == 1);
+
+    if let Value::Int(code) = stack[0] {
+        Ok(code as i32)
+    } else {
+        Ok(0)
+    }
 }

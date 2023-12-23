@@ -8,5 +8,6 @@ fn main() {
     program.print();
     let bundle = program.bundle();
     println!("#CP = {}, #F = {}", bundle.constant_pool.len(), bundle.func_list.len());
-    vm::vm::run_program(&bundle).unwrap();
+    let code = vm::vm::run_program(&bundle).unwrap();
+    println!("code = {code}");
 }
