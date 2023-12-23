@@ -11,9 +11,10 @@ pub const STORE_ITEM: u8 = 0x0b;
 pub const DUP: u8 = 0x10;
 pub const POP: u8 = 0x11;
 
-pub const PUSH_INT: u8 = 0x20;
-pub const PUSH_CONST: u8 = 0x21;
-pub const NEW_ARRAY: u8 = 0x22;
+pub const PUSH_NULL: u8 = 0x20;
+pub const PUSH_INT: u8 = 0x21;
+pub const PUSH_CONST: u8 = 0x22;
+pub const NEW_ARRAY: u8 = 0x23;
 
 pub const PUSH_ARG: u8 = 0x28;
 pub const PUSH_SELF: u8 = 0x29;
@@ -95,10 +96,10 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "0x1d", params: 0 },
     CodeInfo { name: "0x1e", params: 0 },
     CodeInfo { name: "0x1f", params: 0 },
+    CodeInfo { name: "PUSH_NULL", params: 0 },
     CodeInfo { name: "PUSH_INT", params: 1 },
     CodeInfo { name: "PUSH_CONST", params: 1 },
-    CodeInfo { name: "NEW_ARRAY", params: 0 },
-    CodeInfo { name: "0x23", params: 0 },
+    CodeInfo { name: "NEW_ARRAY", params: 1 },
     CodeInfo { name: "0x24", params: 0 },
     CodeInfo { name: "0x25", params: 0 },
     CodeInfo { name: "0x26", params: 0 },

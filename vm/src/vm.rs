@@ -11,6 +11,7 @@ pub enum VMError {
     ConstantNotString,
     BadStack,
     InvalidType { expected: &'static str, got: &'static str },
+    ArrayIndexOutOfBound,
     SuperDoesNotExist
 }
 
@@ -73,52 +74,74 @@ impl Value {
         Self::Object(Gc::new(GcCell::new(HashMap::new())))
     }
 
+    fn new_arr(a: Vec<Value>) -> Self {
+        Self::Array(Gc::new(GcCell::new(a)))
+    }
+
     fn as_int(&self) -> Result<i64, VMError> {
-        if let Value::Int(i) = self {
-            Ok(*i)
-        } else {
-            Err(VMError::InvalidType { expected: "int", got: self.type_to_str() })
+        match self {
+            Value::Int(i) => Ok(*i),
+            _ => Err(VMError::InvalidType { expected: "int", got: self.type_to_str() })
         }
     }
 
     fn as_float(&self) -> Result<f64, VMError> {
-        if let Value::Float(f) = self {
-            Ok(*f)
-        } else {
-            Err(VMError::InvalidType { expected: "float", got: self.type_to_str() })
+        match self {
+            Value::Float(f) => Ok(*f),
+            _ => Err(VMError::InvalidType { expected: "float", got: self.type_to_str() })
         }
     }
 
     fn as_bool(&self) -> Result<bool, VMError> {
-        if let Value::Bool(b) = self {
-            Ok(*b)
-        } else {
-            Err(VMError::InvalidType { expected: "bool", got: self.type_to_str() })
+        match self {
+            Value::Bool(b) => Ok(*b),
+            _ => Err(VMError::InvalidType { expected: "bool", got: self.type_to_str() })
         }
     }
 
     fn as_str(&self) -> Result<&str, VMError> {
-        if let Value::String(s) = self {
-            Ok(s)
-        } else {
-            Err(VMError::InvalidType { expected: "string", got: self.type_to_str() })
+        match self {
+            Value::String(s) => Ok(s),
+            _ => Err(VMError::InvalidType { expected: "string", got: self.type_to_str() })
         }
     }
 
     fn as_obj(&self) -> Result<&Gc<GcCell<HashMap<String, Value>>>, VMError> {
-        if let Value::Object(o) = self {
-            Ok(o)
-        } else {
-            Err(VMError::InvalidType { expected: "object", got: self.type_to_str() })
+        match self {
+            Value::Object(o) => Ok(o),
+            _ => Err(VMError::InvalidType { expected: "object", got: self.type_to_str() })
         }
     }
 
     fn as_closure(&self) -> Result<&Closure, VMError> {
-        if let Value::Closure(c) = self {
-            Ok(c)
-        } else {
-            Err(VMError::InvalidType { expected: "closure", got: self.type_to_str() })
+        match self {
+            Value::Closure(c) => Ok(c),
+            _ => Err(VMError::InvalidType { expected: "closure", got: self.type_to_str() })
         }
+    }
+
+    fn cmp_gt(&self, other: &Value) -> Result<bool, VMError> {
+        Ok(match self {
+            Value::Int(i) => *i > other.as_int()?,
+            Value::Float(f) => *f > other.as_float()?,
+            Value::String(s) => s.as_str() > other.as_str()?,
+            _ => return Err(VMError::InvalidType {
+                expected: "int/float/string",
+                got: self.type_to_str()
+            })
+        })
+    }
+
+    fn cmp_lt(&self, other: &Value) -> Result<bool, VMError> {
+        Ok(match self {
+            Value::Int(i) => *i < other.as_int()?,
+            Value::Float(f) => *f < other.as_float()?,
+            Value::String(s) => s.as_str() < other.as_str()?,
+            _ => return Err(VMError::InvalidType {
+                expected: "int/float/string",
+                got: self.type_to_str()
+            })
+        })
     }
 }
 
@@ -141,10 +164,9 @@ fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
 fn next_str<'a>(func: &Vec<u8>, pc: &mut usize, program: &'a ProgramBundle) -> Result<&'a str, VMError> {
     let str_idx: usize = next(func, pc)?.into();
     let constant = get_constant(program, str_idx)?;
-    if let Constant::String(s) = constant {
-        Ok(s)
-    } else {
-        Err(VMError::ConstantNotString)
+    match constant {
+        Constant::String(s) => Ok(s),
+        _ => Err(VMError::ConstantNotString)
     }
 }
 
@@ -216,40 +238,104 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
         match code {
             code::LOAD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                if let Some(v) = this(&info).borrow().get(str) {
-                    stack.push(v.clone());
-                } else {
-                    stack.push(Value::Null);
+                match this(&info).borrow().get(str) {
+                    Some(v) => stack.push(v.clone()),
+                    None => stack.push(Value::Null)
                 }
             }
             code::LOAD_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                if let Some(v) = parent(&info)?.borrow().get(str) {
-                    stack.push(v.clone())
-                } else {
-                    stack.push(Value::Null)
+                match parent(&info)?.borrow().get(str) {
+                    Some(v) => stack.push(v.clone()),
+                    None => stack.push(Value::Null)
+                }
+            }
+            code::LOAD_FIELD => {
+                let str = next_str(&cur_func, &mut pc, program)?;
+                let obj = stack_pop(&mut stack, ptr)?;
+                match obj.as_obj()?.borrow().get(str) {
+                    Some(v) => stack.push(v.clone()),
+                    None => stack.push(Value::Null)
+                };
+            }
+            code::LOAD_ITEM => {
+                let idx = stack_pop(&mut stack, ptr)?;
+                let obj = stack_pop(&mut stack, ptr)?;
+                match &obj {
+                    Value::Object(o) => {
+                        let idx = idx.as_str()?;
+                        match o.borrow().get(idx) {
+                            Some(v) => stack.push(v.clone()),
+                            None => stack.push(Value::Null)
+                        }
+                    }
+                    Value::Array(a) => {
+                        let idx: usize = idx.as_int()?.try_into()
+                            .map_err(|_| VMError::ArrayIndexOutOfBound)?;
+                        stack.push(a.borrow().get(idx)
+                            .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
+                            .clone());
+                    }
+                    _ => return Err(VMError::InvalidType {
+                        expected: "object/array",
+                        got: obj.type_to_str()
+                    })
                 }
             }
             code::STORE => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                if let Value::Null = stack_top(&stack, ptr)? {
-                    this(&info).borrow_mut().remove(str);
-                } else {
-                    this(&info).borrow_mut().insert(str.to_owned(), stack_top(&stack, ptr)?.clone());
-                }
+                match stack_top(&stack, ptr)? {
+                    Value::Null => this(&info).borrow_mut().remove(str),
+                    _ => this(&info).borrow_mut()
+                        .insert(str.to_owned(), stack_top(&stack, ptr)?.clone())
+                };
             }
             code::STORE_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                if let Value::Null = stack_top(&stack, ptr)? {
-                    parent(&info)?.borrow_mut().remove(str);
-                } else {
-                    parent(&info)?.borrow_mut().insert(str.to_owned(), stack_top(&stack, ptr)?.clone());
+                match stack_top(&stack, ptr)? {
+                    Value::Null => parent(&info)?.borrow_mut().remove(str),
+                    _ => parent(&info)?.borrow_mut()
+                        .insert(str.to_owned(), stack_top(&stack, ptr)?.clone())
+                };
+            }
+            code::STORE_FIELD => {
+                let str = next_str(&cur_func, &mut pc, program)?;
+                let value = stack_pop(&mut stack, ptr)?;
+                let obj = stack_pop(&mut stack, ptr)?;
+                match &value {
+                    Value::Null => obj.as_obj()?.borrow_mut().remove(str),
+                    _ => obj.as_obj()?.borrow_mut().insert(str.to_owned(), value.clone())
+                };
+            }
+            code::STORE_ITEM => {
+                let value = stack_pop(&mut stack, ptr)?;
+                let idx = stack_pop(&mut stack, ptr)?;
+                let obj = stack_pop(&mut stack, ptr)?;
+                match &obj {
+                    Value::Object(o) => {
+                        let idx = idx.as_str()?;
+                        match &value {
+                            Value::Null => o.borrow_mut().remove(idx),
+                            _ => o.borrow_mut().insert(idx.to_owned(), value.clone())
+                        };
+                    }
+                    Value::Array(a) => {
+                        let idx: usize = idx.as_int()?.try_into()
+                            .map_err(|_| VMError::ArrayIndexOutOfBound)?;
+                        *a.borrow_mut().get_mut(idx)
+                            .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
+                    }
+                    _ => return Err(VMError::InvalidType {
+                        expected: "object/array",
+                        got: obj.type_to_str()
+                    })
                 }
             }
             code::DUP => stack.push(stack_top(&stack, ptr)?.clone()),
             code::POP => {
                 stack_pop(&mut stack, ptr)?;
             }
+            code::PUSH_NULL => stack.push(Value::Null),
             code::PUSH_INT => {
                 let i = next(&cur_func, &mut pc)? as i8;
                 stack.push(Value::Int(i.into()));
@@ -262,6 +348,14 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
                     Constant::String(v) => Value::new_str(v)
                 });
             }
+            code::NEW_ARRAY => {
+                let cnt: usize = next(&cur_func, &mut pc)?.into();
+                if stack.len() < ptr + cnt {
+                    return Err(VMError::BadStack);
+                }
+                let v = Value::new_arr(stack.drain(stack.len() - cnt ..).collect());
+                stack.push(v);
+            }
             code::PUSH_ARG => {
                 let arg_idx: usize = next(&cur_func, &mut pc)?.into();
                 let arg_cnt = cur_info(&info).arg_cnt;
@@ -272,6 +366,15 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
                 }
             }
             code::PUSH_SELF => stack.push(cur_info(&info).variables.this.clone()),
+            code::PUSH_SUPER => {
+                let lvl: u32 = next(&cur_func, &mut pc)?.into();
+                let mut vars = Box::new(&cur_info(&info).variables);
+                for _ in 0 .. lvl + 1 {
+                    vars = Box::new(vars.parent.as_ref()
+                        .ok_or_else(|| VMError::SuperDoesNotExist)?);
+                }
+                stack.push(vars.this.clone());
+            }
             code::PUSH_CLOSURE => {
                 let idx: usize = next(&cur_func, &mut pc)?.into();
                 stack.push(Value::Closure(Closure {
@@ -285,19 +388,22 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
             }
             code::JN => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if let Value::Null = stack_pop(&mut stack, ptr)? {
+                if let Value::Null = stack_top(&mut stack, ptr)? {
+                    stack_pop(&mut stack, ptr)?;
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JT => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if stack_pop(&mut stack, ptr)?.as_bool()? {
+                if stack_top(&mut stack, ptr)?.as_bool()? {
+                    stack_pop(&mut stack, ptr)?;
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JF => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if !stack_pop(&mut stack, ptr)?.as_bool()? {
+                if !stack_top(&mut stack, ptr)?.as_bool()? {
+                    stack_pop(&mut stack, ptr)?;
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
@@ -398,44 +504,47 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
             code::CMP_GT => {
                 let v2 = stack_pop(&mut stack, ptr)?;
                 let v1 = stack_pop(&mut stack, ptr)?;
-                stack.push(Value::Bool(match &v1 {
-                    Value::Int(v1) => *v1 > v2.as_int()?,
-                    Value::Float(v1) => *v1 > v2.as_float()?,
-                    Value::String(s) => s.as_str() > v2.as_str()?,
-                    _ => return Err(VMError::InvalidType {
-                        expected: "int/float/string",
-                        got: v1.type_to_str()
-                    })
-                }));
+                stack.push(Value::Bool(v1.cmp_gt(&v2)?));
             }
             code::CMP_LT => {
                 let v2 = stack_pop(&mut stack, ptr)?;
                 let v1 = stack_pop(&mut stack, ptr)?;
-                stack.push(Value::Bool(match &v1 {
-                    Value::Int(v1) => *v1 < v2.as_int()?,
-                    Value::Float(v1) => *v1 < v2.as_float()?,
-                    Value::String(s) => s.as_str() < v2.as_str()?,
-                    _ => return Err(VMError::InvalidType {
-                        expected: "int/float/string",
-                        got: v1.type_to_str()
-                    })
-                }));
+                stack.push(Value::Bool(v1.cmp_lt(&v2)?));
+            }
+            code::CMP_GE => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_pop(&mut stack, ptr)?;
+                stack.push(Value::Bool(!v1.cmp_lt(&v2)?));
+            }
+            code::CMP_LE => {
+                let v2 = stack_pop(&mut stack, ptr)?;
+                let v1 = stack_pop(&mut stack, ptr)?;
+                stack.push(Value::Bool(!v1.cmp_gt(&v2)?));
             }
             code::IN => {
                 let mut str = String::new();
                 std::io::stdin().read_line(&mut str).expect("`stdin.read_line` failed");
                 stack.push(Value::new_str(str));
             }
-            code::OUT => println!("{:?}", stack_pop(&mut stack, ptr)?),
+            code::OUT => {
+                let value = stack_pop(&mut stack, ptr)?;
+                match &value {
+                    Value::Null => println!("null"),
+                    Value::Int(i) => println!("{i}"),
+                    Value::Float(f) => println!("{f}"),
+                    Value::Bool(b) => println!("{b}"),
+                    Value::String(s) => println!("{s}"),
+                    _ => println!("{:?}", value)
+                }
+            },
             _ => return Err(VMError::UnknownInstruction(code))
         }
     }
 
     assert!(stack.len() == 1);
 
-    if let Value::Int(code) = stack[0] {
-        Ok(code as i32)
-    } else {
-        Ok(0)
+    match stack[0] {
+        Value::Int(code) => Ok(code as i32),
+        _ => Ok(0)
     }
 }

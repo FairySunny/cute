@@ -227,10 +227,9 @@ impl<'a> Lexer<'a> {
                     }
                     Some('>') => {
                         self.input.next();
-                        if let Some(_) = self.input.next_if_eq(&'>') {
-                            Token::Ushr
-                        } else {
-                            Token::Shr
+                        match self.input.next_if_eq(&'>') {
+                            Some(_) => Token::Ushr,
+                            None => Token::Shr
                         }
                     }
                     _ => Token::Single('>')

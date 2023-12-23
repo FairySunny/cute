@@ -296,6 +296,12 @@ impl<'a, 'b> Parser<'a, 'b> {
 
                 let (lval, _) = self.op_expression(uop.pri)?;
 
+                if !uop.write_lval {
+                    if let Some(lval) = &lval {
+                        self.read_left_value(lval)?;
+                    }
+                }
+
                 match uop.action {
                     UOpAction::NoOp => {}
                     UOpAction::Loop => {
@@ -306,8 +312,8 @@ impl<'a, 'b> Parser<'a, 'b> {
                     UOpAction::Return => self.program.byte(code::RETURN),
                     UOpAction::In => self.program.byte(code::IN),
                     UOpAction::Out => {
-                        self.program.byte(code::DUP);
                         self.program.byte(code::OUT);
+                        self.program.byte(code::PUSH_NULL);
                     }
                     UOpAction::Code(code) => self.program.byte(code)
                 }
@@ -315,8 +321,8 @@ impl<'a, 'b> Parser<'a, 'b> {
                 if uop.write_lval {
                     match &lval {
                         Some(lval) => {
-                            self.program.byte(code::DUP);
                             self.write_left_value(&lval)?;
+                            self.program.byte(code::PUSH_NULL);
                         }
                         None => return Err(ParserError::NotLeftValue)
                     }
@@ -377,8 +383,8 @@ impl<'a, 'b> Parser<'a, 'b> {
             match bop.action {
                 BOpAction::Assign => match &lval {
                     Some(lval) => {
-                        self.program.byte(code::DUP);
                         self.write_left_value(lval)?;
+                        self.program.byte(code::PUSH_NULL);
                     }
                     None => return Err(ParserError::NotLeftValue)
                 }

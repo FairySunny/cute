@@ -1,0 +1,30 @@
+sort = @{
+    > arr; > begin; > end;
+    begin + 1 >= end && < nil;
+    first = begin;
+    last = end - 1;
+    key = arr[begin];
+    :{
+        $first < $last || < 0;
+        :{
+            $$first < $$last && $$arr[$$last] >= $$key || < 0;
+            $$last = $$last - 1;
+            < nil;
+        };
+        $arr[$first] = $arr[$last];
+        :{
+            $$first < $$last && $$arr[$$first] < $$key || < 0;
+            $$first = $$first + 1;
+            < nil;
+        };
+        $arr[$last] = $arr[$first];
+        < nil;
+    };
+    arr[first] = key;
+    $sort(arr, begin, first);
+    $sort(arr, first + 1, end);
+};
+
+a = [1.5, -2.2, 3.4, -6.7, -6.5, 5.4];
+sort(a, 0, 6);
+<< a;
