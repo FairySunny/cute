@@ -284,18 +284,20 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
             }
             code::STORE => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match stack_top(&stack, ptr)? {
+                let value = stack_pop(&mut stack, ptr)?;
+                match &value {
                     Value::Null => this(&info).borrow_mut().remove(str),
                     _ => this(&info).borrow_mut()
-                        .insert(str.to_owned(), stack_top(&stack, ptr)?.clone())
+                        .insert(str.to_owned(), value)
                 };
             }
             code::STORE_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match stack_top(&stack, ptr)? {
+                let value = stack_pop(&mut stack, ptr)?;
+                match &value {
                     Value::Null => parent(&info)?.borrow_mut().remove(str),
                     _ => parent(&info)?.borrow_mut()
-                        .insert(str.to_owned(), stack_top(&stack, ptr)?.clone())
+                        .insert(str.to_owned(), value)
                 };
             }
             code::STORE_FIELD => {
@@ -347,6 +349,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
             code::POP => {
                 stack_pop(&mut stack, ptr)?;
             }
+            code::PUSH_NULL => stack.push(Value::Null),
             code::PUSH_INT => {
                 let i = next(&cur_func, &mut pc)? as i8;
                 stack.push(Value::Int(i.into()));
@@ -399,22 +402,19 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
             }
             code::JN => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if let Value::Null = stack_top(&mut stack, ptr)? {
-                    stack_pop(&mut stack, ptr)?;
+                if let Value::Null = stack_pop(&mut stack, ptr)? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JT => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if stack_top(&mut stack, ptr)?.as_bool()? {
-                    stack_pop(&mut stack, ptr)?;
+                if stack_pop(&mut stack, ptr)?.as_bool()? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JF => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if !stack_top(&mut stack, ptr)?.as_bool()? {
-                    stack_pop(&mut stack, ptr)?;
+                if !stack_pop(&mut stack, ptr)?.as_bool()? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
@@ -440,6 +440,9 @@ pub fn run_program(program: &ProgramBundle) -> Result<i32, VMError> {
             code::RETURN => {
                 let value = stack_pop(&mut stack, ptr)?;
                 let cur_info = cur_info(&info);
+                if stack.len() != ptr {
+                    return Err(VMError::BadStack);
+                }
                 stack.resize(ptr - cur_info.arg_cnt - 1, Value::Null);
                 stack.push(value);
                 if info.len() <= 1 {

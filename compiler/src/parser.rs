@@ -297,7 +297,9 @@ impl<'a, 'b> Parser<'a, 'b> {
                 let mut pos = 0usize;
 
                 if let UOpAction::Loop = uop.action {
+                    self.program.byte(code::PUSH_NULL);
                     pos = self.program.get_pos();
+                    self.program.byte(code::POP);
                 }
 
                 let (lval, _) = self.op_expression(uop.pri)?;
@@ -311,6 +313,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 match uop.action {
                     UOpAction::NoOp => {}
                     UOpAction::Loop => {
+                        self.program.byte(code::DUP);
                         self.program.byte(code::JN);
                         self.program.jump_back(pos)?;
                     },
