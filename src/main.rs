@@ -1,7 +1,7 @@
 use std::{env, io, fs, process};
 use bytecode::program::Program;
 use compiler::{lexer::Lexer, parser};
-use vm::vm;
+use vm::executor;
 
 fn main() {
     let args: Vec<_> = env::args().collect();
@@ -33,7 +33,7 @@ fn main() {
     parser::parse(Lexer::new(source.chars()), &mut program);
     program.print();
     let bundle = program.bundle();
-    vm::run_program(&bundle)
+    executor::run_program(&bundle)
         .unwrap_or_else(|e| {
             eprintln!("Error executing script: {:?}", e);
             process::exit(1);

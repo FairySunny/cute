@@ -1,6 +1,6 @@
 pub mod misc {
     use std::collections::HashMap;
-    use crate::vm::Value;
+    use crate::types::Value;
 
     pub fn load_libs(libs: &mut HashMap<String, Value>) {
         // the 'global' object
@@ -21,7 +21,7 @@ pub mod misc {
 
 pub mod types {
     use std::{collections::HashMap, str::FromStr};
-    use crate::vm::{Value, VMError};
+    use crate::types::{Value, VMError};
 
     pub fn load_libs(libs: &mut HashMap<String, Value>) {
         libs.insert("types".to_owned(), Value::new_lib_obj(|obj| {
