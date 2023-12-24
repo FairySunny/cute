@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::{program::{ProgramBundle, Constant}, code};
-use crate::std::misc;
+use crate::std::{misc, types};
 
 #[derive(Debug)]
 pub enum VMError {
@@ -15,10 +15,11 @@ pub enum VMError {
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
     UnknownLibrary(String),
-    ObjectLocked
+    ObjectLocked,
+    IllegalFunctionArguments
 }
 
-#[derive(Debug, Trace, Finalize)]
+#[derive(Trace, Finalize)]
 pub struct Lockable<T> {
     data: T,
     locked: bool
@@ -54,7 +55,7 @@ impl<T> Lockable<T> {
     }
 }
 
-#[derive(Debug, Trace, Finalize)]
+#[derive(Trace, Finalize)]
 struct Variables {
     parent: Option<Gc<Variables>>,
     this: Value
@@ -73,13 +74,13 @@ impl Variables {
     }
 }
 
-#[derive(Debug, Clone, Trace, Finalize)]
+#[derive(Clone, Trace, Finalize)]
 pub struct Closure {
     parent: Gc<Variables>,
     func_idx: usize
 }
 
-#[derive(Debug, Clone, Trace, Finalize)]
+#[derive(Clone, Trace, Finalize)]
 pub enum Value {
     Null,
     Int(i64),
@@ -88,7 +89,11 @@ pub enum Value {
     String(Gc<String>),
     Object(Gc<GcCell<Lockable<HashMap<String, Value>>>>),
     Array(Gc<GcCell<Lockable<Vec<Value>>>>),
-    Closure(Closure)
+    Closure(Closure),
+    NativeFunction(
+        #[unsafe_ignore_trace]
+        Rc<dyn Fn(Vec<Value>) -> Result<Value, VMError>>
+    )
 }
 
 impl Value {
@@ -101,7 +106,8 @@ impl Value {
             Self::String(_) => "string",
             Self::Object(_) => "object",
             Self::Array(_) => "array",
-            Self::Closure(_) => "closure"
+            Self::Closure(_) => "closure",
+            Self::NativeFunction(_) => "native function"
         }
     }
 
@@ -113,8 +119,21 @@ impl Value {
         Self::Object(Gc::new(GcCell::new(Lockable::new(HashMap::new(), false))))
     }
 
+    pub fn new_lib_obj(create: impl FnOnce(&mut HashMap<String, Value>)) -> Self {
+        let lib = Value::new_obj();
+        let mut lib_obj = lib.as_obj().unwrap().borrow_mut();
+        create(lib_obj.get_mut().unwrap());
+        lib_obj.lock();
+        drop(lib_obj);
+        lib
+    }
+
     pub fn new_arr(a: Vec<Value>) -> Self {
         Self::Array(Gc::new(GcCell::new(Lockable::new(a, false))))
+    }
+
+    pub fn new_func(func: impl Fn(Vec<Value>) -> Result<Value, VMError> + 'static) -> Self {
+        Self::NativeFunction(Rc::new(func))
     }
 
     pub fn as_int(&self) -> Result<i64, VMError> {
@@ -208,6 +227,10 @@ impl Value {
                     v.func_idx == v2.func_idx && Gc::ptr_eq(&v.parent, &v2.parent),
                 _ => false
             }
+            Value::NativeFunction(v) => match other {
+                Value::NativeFunction(v2) => Rc::ptr_eq(v, v2),
+                _ => false
+            }
         }
     }
 
@@ -233,6 +256,20 @@ impl Value {
                 got: self.type_to_str()
             })
         })
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Value::Null => "null".to_owned(),
+            Value::Int(i) => i.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::String(s) => s.to_string(),
+            Value::Object(_) => "[object]".to_owned(),
+            Value::Array(_) => "[array]".to_owned(),
+            Value::Closure(_) => "[closure]".to_owned(),
+            Value::NativeFunction(_) => "[native function]".to_owned()
+        }
     }
 }
 
@@ -318,6 +355,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
 
     let mut libs = HashMap::new();
     misc::load_libs(&mut libs);
+    types::load_libs(&mut libs);
 
     let mut func_idx = 0usize;
     let mut cur_func = Box::new(program.func_list.get(func_idx)
@@ -519,19 +557,32 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 if stack.len() < ptr + 1 + arg_cnt {
                     return Err(VMError::BadStack);
                 }
-                let closure = stack[stack.len() - arg_cnt - 1].as_closure()?;
-                info.push(StackInfo {
-                    variables: Gc::new(Variables::new(Some(&closure.parent))),
-                    arg_cnt,
-                    func_idx_return: func_idx,
-                    ptr_return: ptr,
-                    pc_return: pc
-                });
-                func_idx = closure.func_idx;
-                cur_func = Box::new(program.func_list.get(func_idx)
-                    .ok_or_else(|| VMError::FunctionIndexOutOfBound)?);
-                pc = 0;
-                ptr = stack.len();
+                match &stack[stack.len() - arg_cnt - 1] {
+                    Value::Closure(closure) => {
+                        info.push(StackInfo {
+                            variables: Gc::new(Variables::new(Some(&closure.parent))),
+                            arg_cnt,
+                            func_idx_return: func_idx,
+                            ptr_return: ptr,
+                            pc_return: pc
+                        });
+                        func_idx = closure.func_idx;
+                        cur_func = Box::new(program.func_list.get(func_idx)
+                            .ok_or_else(|| VMError::FunctionIndexOutOfBound)?);
+                        pc = 0;
+                        ptr = stack.len();
+                    }
+                    Value::NativeFunction(func) => {
+                        let func = func.clone();
+                        let args = stack.drain(stack.len() - arg_cnt ..).collect();
+                        stack.pop().unwrap();
+                        stack.push(func(args)?);
+                    }
+                    v => return Err(VMError::InvalidType {
+                        expected: "closure/native function",
+                        got: v.type_to_str()
+                    })
+                }
             }
             code::RETURN => {
                 let value = stack_pop(&mut stack, ptr)?;
@@ -707,17 +758,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
                 stack.push(Value::new_str(str));
             }
-            code::OUT => {
-                let value = stack_pop(&mut stack, ptr)?;
-                match &value {
-                    Value::Null => println!("null"),
-                    Value::Int(i) => println!("{i}"),
-                    Value::Float(f) => println!("{f}"),
-                    Value::Bool(b) => println!("{b}"),
-                    Value::String(s) => println!("{s}"),
-                    _ => println!("{:?}", value)
-                }
-            },
+            code::OUT => println!("{}", stack_pop(&mut stack, ptr)?.to_string()),
             code::LOAD_LIB => {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 stack.push(libs.get(str)
