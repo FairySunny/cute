@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::{program::{ProgramBundle, Constant}, code};
 use crate::std::{misc, types};
@@ -90,10 +90,7 @@ pub enum Value {
     Object(Gc<GcCell<Lockable<HashMap<String, Value>>>>),
     Array(Gc<GcCell<Lockable<Vec<Value>>>>),
     Closure(Closure),
-    NativeFunction(
-        #[unsafe_ignore_trace]
-        Rc<dyn Fn(Vec<Value>) -> Result<Value, VMError>>
-    )
+    NativeFunction(fn(Vec<Value>) -> Result<Value, VMError>)
 }
 
 impl Value {
@@ -130,10 +127,6 @@ impl Value {
 
     pub fn new_arr(a: Vec<Value>) -> Self {
         Self::Array(Gc::new(GcCell::new(Lockable::new(a, false))))
-    }
-
-    pub fn new_func(func: impl Fn(Vec<Value>) -> Result<Value, VMError> + 'static) -> Self {
-        Self::NativeFunction(Rc::new(func))
     }
 
     pub fn as_int(&self) -> Result<i64, VMError> {
@@ -228,7 +221,7 @@ impl Value {
                 _ => false
             }
             Value::NativeFunction(v) => match other {
-                Value::NativeFunction(v2) => Rc::ptr_eq(v, v2),
+                Value::NativeFunction(v2) => v == v2,
                 _ => false
             }
         }
