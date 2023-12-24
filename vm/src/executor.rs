@@ -86,6 +86,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
     let mut libs = HashMap::new();
     libraries::misc::load_libs(&mut libs);
     libraries::types::load_libs(&mut libs);
+    libraries::arrays::load_libs(&mut libs);
 
     let mut func_idx = 0usize;
     let mut cur_func = Box::new(program.func_list.get(func_idx)
@@ -132,8 +133,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                         }
                     }
                     Value::Array(a) => {
-                        let idx: usize = idx.as_int()?.try_into()
-                            .map_err(|_| VMError::ArrayIndexOutOfBound)?;
+                        let idx: usize = idx.as_idx()?;
                         stack.push(a.borrow().get().get(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
                             .clone());
@@ -186,8 +186,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                         };
                     }
                     Value::Array(a) => {
-                        let idx: usize = idx.as_int()?.try_into()
-                            .map_err(|_| VMError::ArrayIndexOutOfBound)?;
+                        let idx: usize = idx.as_idx()?;
                         *a.borrow_mut().get_mut()?.get_mut(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
                     }
@@ -302,8 +301,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                         pc = 0;
                         ptr = stack.len();
                     }
-                    Value::NativeFunction(func) => {
-                        let func = func.clone();
+                    &Value::NativeFunction(func) => {
                         let args = stack.drain(stack.len() - arg_cnt ..).collect();
                         stack.pop().unwrap();
                         stack.push(func(args)?);

@@ -141,6 +141,11 @@ impl Value {
         }
     }
 
+    pub fn as_idx(&self) -> Result<usize, VMError> {
+        self.as_int()?.try_into()
+            .map_err(|_| VMError::ArrayIndexOutOfBound)
+    }
+
     pub fn as_float(&self) -> Result<f64, VMError> {
         match self {
             Value::Float(f) => Ok(*f),
