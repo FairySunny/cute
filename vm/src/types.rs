@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use gc::{Trace, Finalize, Gc, GcCell};
+use bytecode::program::ProgramBundle;
 
 #[derive(Debug)]
 pub enum VMError {
@@ -88,7 +89,10 @@ pub enum Value {
     Object(Gc<GcCell<Lockable<HashMap<String, Value>>>>),
     Array(Gc<GcCell<Lockable<Vec<Value>>>>),
     Closure(Closure),
-    NativeFunction(fn(Vec<Value>) -> Result<Value, VMError>)
+    NativeFunction(
+        #[unsafe_ignore_trace]
+        fn(&ProgramBundle, &mut HashMap<String, Value>, Vec<Value>) -> Result<Value, VMError>
+    )
 }
 
 impl Value {

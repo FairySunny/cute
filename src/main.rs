@@ -33,7 +33,7 @@ fn main() {
     parser::parse(Lexer::new(source.chars()), &mut program);
     program.print();
     let bundle = program.bundle();
-    executor::run_program(&bundle)
+    executor::execute_program(&bundle)
         .unwrap_or_else(|e| {
             eprintln!("Error executing script: {:?}", e);
             process::exit(1);

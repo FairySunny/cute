@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use crate::types::{Value, VMError};
+use gc::Gc;
+use crate::{types::{Value, VMError, Variables}, executor};
 
 pub fn load_libs(libs: &mut HashMap<String, Value>) {
     libs.insert("arrays".to_owned(), Value::new_lib_obj(|obj| {
-        obj.insert("push".to_owned(), Value::NativeFunction(|mut args| {
+        obj.insert("push".to_owned(), Value::NativeFunction(|_, _, mut args| {
             if args.len() < 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -11,14 +12,14 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
             args[0].as_arr()?.borrow_mut().get_mut()?.append(&mut elements);
             Ok(Value::Null)
         }));
-        obj.insert("pop".to_owned(), Value::NativeFunction(|args| {
+        obj.insert("pop".to_owned(), Value::NativeFunction(|_, _, args| {
             if args.len() != 1 {
                 return Err(VMError::IllegalFunctionArguments);
             }
             args[0].as_arr()?.borrow_mut().get_mut()?.pop()
                 .ok_or_else(|| VMError::ArrayIndexOutOfBound)
         }));
-        obj.insert("splice".to_owned(), Value::NativeFunction(|mut args| {
+        obj.insert("splice".to_owned(), Value::NativeFunction(|_, _, mut args| {
             if args.len() < 3 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -33,7 +34,7 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
             }
             Ok(Value::new_arr(arr.get_mut()?.splice(start .. end, elements).collect()))
         }));
-        obj.insert("slice".to_owned(), Value::NativeFunction(|args| {
+        obj.insert("slice".to_owned(), Value::NativeFunction(|_, _, args| {
             if args.len() < 2 || args.len() > 3 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -47,6 +48,61 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
                 return Err(VMError::ArrayIndexOutOfBound);
             }
             Ok(Value::new_arr(arr.get()[start .. end].to_owned()))
+        }));
+        obj.insert("for_each".to_owned(), Value::NativeFunction(|program, libs, args| {
+            if args.len() != 2 {
+                return Err(VMError::IllegalFunctionArguments);
+            }
+            let arr = args[0].as_arr()?.borrow().get().clone();
+            let closure = args[1].as_closure()?;
+            for (idx, elem) in arr.into_iter().enumerate() {
+                executor::execute_closure(
+                    program, libs,
+                    closure.func_idx,
+                    Gc::new(Variables::new(Some(&closure.parent))),
+                    vec![elem, Value::Int(idx as i64)]
+                )?;
+            }
+            Ok(Value::Null)
+        }));
+        obj.insert("filter".to_owned(), Value::NativeFunction(|program, libs, args| {
+            if args.len() != 2 {
+                return Err(VMError::IllegalFunctionArguments);
+            }
+            let arr = args[0].as_arr()?.borrow().get().clone();
+            let closure = args[1].as_closure()?;
+            let mut filtered = Vec::with_capacity(arr.len());
+            for (idx, elem) in arr.into_iter().enumerate() {
+                let res = executor::execute_closure(
+                    program, libs,
+                    closure.func_idx,
+                    Gc::new(Variables::new(Some(&closure.parent))),
+                    vec![elem.clone(), Value::Int(idx as i64)]
+                )?;
+                if res.as_bool()? {
+                    filtered.push(elem);
+                }
+            }
+            filtered.shrink_to_fit();
+            Ok(Value::new_arr(filtered))
+        }));
+        obj.insert("map".to_owned(), Value::NativeFunction(|program, libs, args| {
+            if args.len() != 2 {
+                return Err(VMError::IllegalFunctionArguments);
+            }
+            let arr = args[0].as_arr()?.borrow().get().clone();
+            let closure = args[1].as_closure()?;
+            let mut mapped = Vec::with_capacity(arr.len());
+            for (idx, elem) in arr.into_iter().enumerate() {
+                let res = executor::execute_closure(
+                    program, libs,
+                    closure.func_idx,
+                    Gc::new(Variables::new(Some(&closure.parent))),
+                    vec![elem, Value::Int(idx as i64)]
+                )?;
+                mapped.push(res);
+            }
+            Ok(Value::new_arr(mapped))
         }));
     }));
 }

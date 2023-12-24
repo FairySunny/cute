@@ -3,14 +3,6 @@ use gc::{Gc, GcCell};
 use bytecode::{program::{ProgramBundle, Constant}, code};
 use crate::{types::{VMError, Lockable, Variables, Closure, Value}, libraries};
 
-struct StackInfo {
-    variables: Gc<Variables>,
-    arg_cnt: usize,
-    func_idx_return: usize,
-    ptr_return: usize,
-    pc_return: usize
-}
-
 fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     let code = *func.get(*pc)
         .ok_or_else(|| VMError::PCIndexOutOfBound)?;
@@ -33,67 +25,38 @@ fn get_constant(program: &ProgramBundle, idx: usize) -> Result<&Constant, VMErro
         .ok_or_else(|| VMError::ConstantIndexOutOfBound)
 }
 
-fn stack_top(stack: &Vec<Value>, ptr: usize) -> Result<&Value, VMError> {
-    if stack.len() <= ptr {
-        Err(VMError::BadStack)
-    } else {
-        Ok(stack.last().unwrap())
-    }
+fn stack_top(stack: &Vec<Value>) -> Result<&Value, VMError> {
+    stack.last().ok_or_else(|| VMError::BadStack)
 }
 
-fn stack_top_mut(stack: &mut Vec<Value>, ptr: usize) -> Result<&mut Value, VMError> {
-    if stack.len() <= ptr {
-        Err(VMError::BadStack)
-    } else {
-        Ok(stack.last_mut().unwrap())
-    }
+fn stack_top_mut(stack: &mut Vec<Value>) -> Result<&mut Value, VMError> {
+    stack.last_mut().ok_or_else(|| VMError::BadStack)
 }
 
-fn stack_pop(stack: &mut Vec<Value>, ptr: usize) -> Result<Value, VMError> {
-    if stack.len() <= ptr {
-        Err(VMError::BadStack)
-    } else {
-        Ok(stack.pop().unwrap())
-    }
+fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
+    stack.pop().ok_or_else(|| VMError::BadStack)
 }
 
-fn cur_info(info: &Vec<StackInfo>) -> &StackInfo {
-    info.last().expect("`info` is empty")
-}
-
-fn this(info: &Vec<StackInfo>) -> &Gc<GcCell<Lockable<HashMap<String, Value>>>> {
-    cur_info(info).variables.this_obj()
-}
-
-fn parent(info: &Vec<StackInfo>) -> Result<&Gc<GcCell<Lockable<HashMap<String, Value>>>>, VMError> {
-    Ok(cur_info(info).variables.parent.as_ref()
+fn parent(variables: &Gc<Variables>) -> Result<&Gc<GcCell<Lockable<HashMap<String, Value>>>>, VMError> {
+    Ok(variables.parent.as_ref()
         .ok_or_else(|| VMError::SuperDoesNotExist)?
         .this_obj())
 }
 
-pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
-    let mut stack = vec![Value::Null];
-    let mut info = vec![
-        StackInfo {
-            variables: Gc::new(Variables::new(None)),
-            arg_cnt: 0,
-            func_idx_return: 0,
-            ptr_return: 0,
-            pc_return: 0
-        }
-    ];
+pub fn execute_closure(
+    program: &ProgramBundle,
+    libs: &mut HashMap<String, Value>,
+    func_idx: usize,
+    variables: Gc<Variables>,
+    args: Vec<Value>
+) -> Result<Value, VMError> {
+    let cur_func = program.func_list.get(func_idx)
+        .ok_or_else(|| VMError::FunctionIndexOutOfBound)?;
+    let this = variables.this_obj();
 
-    let mut libs = HashMap::new();
-    libraries::misc::load_libs(&mut libs);
-    libraries::types::load_libs(&mut libs);
-    libraries::arrays::load_libs(&mut libs);
-
-    let mut func_idx = 0usize;
-    let mut cur_func = Box::new(program.func_list.get(func_idx)
-        .ok_or_else(|| VMError::FunctionIndexOutOfBound)?);
+    let mut stack = vec![];
 
     let mut pc = 0usize;
-    let mut ptr = 1usize;
 
     loop {
         let code = next(&cur_func, &mut pc)?;
@@ -101,29 +64,29 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
         match code {
             code::LOAD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match this(&info).borrow().get().get(str) {
+                match this.borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
             }
             code::LOAD_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match parent(&info)?.borrow().get().get(str) {
+                match parent(&variables)?.borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
             }
             code::LOAD_FIELD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                let obj = stack_pop(&mut stack, ptr)?;
+                let obj = stack_pop(&mut stack)?;
                 match obj.as_obj()?.borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 };
             }
             code::LOAD_ITEM => {
-                let idx = stack_pop(&mut stack, ptr)?;
-                let obj = stack_pop(&mut stack, ptr)?;
+                let idx = stack_pop(&mut stack)?;
+                let obj = stack_pop(&mut stack)?;
                 match &obj {
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
@@ -146,26 +109,26 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             }
             code::STORE => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                let value = stack_pop(&mut stack, ptr)?;
+                let value = stack_pop(&mut stack)?;
                 match &value {
-                    Value::Null => this(&info).borrow_mut().get_mut()?.remove(str),
-                    _ => this(&info).borrow_mut().get_mut()?
+                    Value::Null => this.borrow_mut().get_mut()?.remove(str),
+                    _ => this.borrow_mut().get_mut()?
                         .insert(str.to_owned(), value)
                 };
             }
             code::STORE_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                let value = stack_pop(&mut stack, ptr)?;
+                let value = stack_pop(&mut stack)?;
                 match &value {
-                    Value::Null => parent(&info)?.borrow_mut().get_mut()?.remove(str),
-                    _ => parent(&info)?.borrow_mut().get_mut()?
+                    Value::Null => parent(&variables)?.borrow_mut().get_mut()?.remove(str),
+                    _ => parent(&variables)?.borrow_mut().get_mut()?
                         .insert(str.to_owned(), value)
                 };
             }
             code::STORE_FIELD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                let value = stack_pop(&mut stack, ptr)?;
-                let obj = stack_pop(&mut stack, ptr)?;
+                let value = stack_pop(&mut stack)?;
+                let obj = stack_pop(&mut stack)?;
                 match &value {
                     Value::Null => obj.as_obj()?.borrow_mut().get_mut()?.remove(str),
                     _ => obj.as_obj()?.borrow_mut().get_mut()?
@@ -173,9 +136,9 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 };
             }
             code::STORE_ITEM => {
-                let value = stack_pop(&mut stack, ptr)?;
-                let idx = stack_pop(&mut stack, ptr)?;
-                let obj = stack_pop(&mut stack, ptr)?;
+                let value = stack_pop(&mut stack)?;
+                let idx = stack_pop(&mut stack)?;
+                let obj = stack_pop(&mut stack)?;
                 match &obj {
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
@@ -196,21 +159,21 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                     })
                 }
             }
-            code::DUP => stack.push(stack_top(&stack, ptr)?.clone()),
+            code::DUP => stack.push(stack_top(&stack)?.clone()),
             code::DUP_PRE2 => {
-                if stack.len() < ptr + 2 {
+                if stack.len() < 2 {
                     return Err(VMError::BadStack);
                 }
                 stack.insert(stack.len() - 2, stack.last().unwrap().clone());
             }
             code::DUP_PRE3 => {
-                if stack.len() < ptr + 3 {
+                if stack.len() < 3 {
                     return Err(VMError::BadStack);
                 }
                 stack.insert(stack.len() - 3, stack.last().unwrap().clone());
             }
             code::POP => {
-                stack_pop(&mut stack, ptr)?;
+                stack_pop(&mut stack)?;
             }
             code::PUSH_NULL => stack.push(Value::Null),
             code::PUSH_INT => {
@@ -227,7 +190,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             }
             code::NEW_ARRAY => {
                 let cnt: usize = next(&cur_func, &mut pc)?.into();
-                if stack.len() < ptr + cnt {
+                if stack.len() < cnt {
                     return Err(VMError::BadStack);
                 }
                 let v = Value::new_arr(stack.drain(stack.len() - cnt ..).collect());
@@ -235,17 +198,12 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             }
             code::PUSH_ARG => {
                 let arg_idx: usize = next(&cur_func, &mut pc)?.into();
-                let arg_cnt = cur_info(&info).arg_cnt;
-                if arg_idx < arg_cnt {
-                    stack.push(stack[ptr - arg_cnt + arg_idx].clone());
-                } else {
-                    stack.push(Value::Null);
-                }
+                stack.push(args.get(arg_idx).unwrap_or(&Value::Null).clone());
             }
-            code::PUSH_SELF => stack.push(cur_info(&info).variables.this.clone()),
+            code::PUSH_SELF => stack.push(variables.this.clone()),
             code::PUSH_SUPER => {
                 let lvl: u32 = next(&cur_func, &mut pc)?.into();
-                let mut vars = Box::new(&cur_info(&info).variables);
+                let mut vars = Box::new(&variables);
                 for _ in 0 .. lvl + 1 {
                     vars = Box::new(vars.parent.as_ref()
                         .ok_or_else(|| VMError::SuperDoesNotExist)?);
@@ -255,7 +213,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             code::PUSH_CLOSURE => {
                 let idx: usize = next(&cur_func, &mut pc)?.into();
                 stack.push(Value::Closure(Closure {
-                    parent: cur_info(&info).variables.clone(),
+                    parent: variables.clone(),
                     func_idx: idx
                 }));
             }
@@ -265,74 +223,51 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
             }
             code::JN => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if let Value::Null = stack_pop(&mut stack, ptr)? {
+                if let Value::Null = stack_pop(&mut stack)? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JT => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if stack_pop(&mut stack, ptr)?.as_bool()? {
+                if stack_pop(&mut stack)?.as_bool()? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::JF => {
                 let offset = next(&cur_func, &mut pc)? as i8;
-                if !stack_pop(&mut stack, ptr)?.as_bool()? {
+                if !stack_pop(&mut stack)?.as_bool()? {
                     pc = (pc as i64 - 1 + offset as i64) as usize;
                 }
             }
             code::CALL => {
                 let arg_cnt: usize = next(&cur_func, &mut pc)?.into();
-                if stack.len() < ptr + 1 + arg_cnt {
+                if stack.len() < 1 + arg_cnt {
                     return Err(VMError::BadStack);
                 }
-                match &stack[stack.len() - arg_cnt - 1] {
-                    Value::Closure(closure) => {
-                        info.push(StackInfo {
-                            variables: Gc::new(Variables::new(Some(&closure.parent))),
-                            arg_cnt,
-                            func_idx_return: func_idx,
-                            ptr_return: ptr,
-                            pc_return: pc
-                        });
-                        func_idx = closure.func_idx;
-                        cur_func = Box::new(program.func_list.get(func_idx)
-                            .ok_or_else(|| VMError::FunctionIndexOutOfBound)?);
-                        pc = 0;
-                        ptr = stack.len();
-                    }
-                    &Value::NativeFunction(func) => {
-                        let args = stack.drain(stack.len() - arg_cnt ..).collect();
-                        stack.pop().unwrap();
-                        stack.push(func(args)?);
-                    }
+                let args = stack.drain(stack.len() - arg_cnt ..).collect();
+                let func = stack.pop().unwrap();
+                match &func {
+                    Value::Closure(closure) => stack.push(
+                        execute_closure(
+                            program, libs,
+                            closure.func_idx,
+                            Gc::new(Variables::new(Some(&closure.parent))),
+                            args
+                        )?
+                    ),
+                    Value::NativeFunction(func) => stack.push(
+                        func(program, libs, args)?
+                    ),
                     v => return Err(VMError::InvalidType {
                         expected: "closure/native function",
                         got: v.type_to_str()
                     })
                 }
             }
-            code::RETURN => {
-                let value = stack_pop(&mut stack, ptr)?;
-                let cur_info = cur_info(&info);
-                if stack.len() != ptr {
-                    return Err(VMError::BadStack);
-                }
-                stack.resize(ptr - cur_info.arg_cnt - 1, Value::Null);
-                stack.push(value);
-                if info.len() <= 1 {
-                    break;
-                }
-                func_idx = cur_info.func_idx_return;
-                cur_func = Box::new(program.func_list.get(func_idx)
-                    .ok_or_else(|| VMError::FunctionIndexOutOfBound)?);
-                pc = cur_info.pc_return;
-                ptr = cur_info.ptr_return;
-                info.pop();
-            }
+            code::RETURN => break,
             code::ADD => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
                     Value::Int(v1) => *v1 += v2.as_int()?,
                     Value::Float(v1) => *v1 += v2.as_float()?,
@@ -344,8 +279,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::SUB => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
                     Value::Int(v1) => *v1 -= v2.as_int()?,
                     Value::Float(v1) => *v1 -= v2.as_float()?,
@@ -356,8 +291,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::MUL => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
                     Value::Int(v1) => *v1 *= v2.as_int()?,
                     Value::Float(v1) => *v1 *= v2.as_float()?,
@@ -368,8 +303,8 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::DIV => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
                     Value::Int(v1) => *v1 /= v2.as_int()?,
                     Value::Float(v1) => *v1 /= v2.as_float()?,
@@ -380,12 +315,12 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::MOD => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 *v1.as_int_mut()? %= v2.as_int()?;
             }
             code::NEG => {
-                let v = stack_top_mut(&mut stack, ptr)?;
+                let v = stack_top_mut(&mut stack)?;
                 match v {
                     Value::Int(v) => *v = -*v,
                     Value::Float(v) => *v = -*v,
@@ -396,37 +331,37 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::CMP_EQ => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_pop(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_pop(&mut stack)?;
                 stack.push(Value::Bool(v1.cmp_eq(&v2)));
             }
             code::CMP_NE => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_pop(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_pop(&mut stack)?;
                 stack.push(Value::Bool(!v1.cmp_eq(&v2)));
             }
             code::CMP_GT => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_pop(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_pop(&mut stack)?;
                 stack.push(Value::Bool(v1.cmp_gt(&v2)?));
             }
             code::CMP_LT => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_pop(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_pop(&mut stack)?;
                 stack.push(Value::Bool(v1.cmp_lt(&v2)?));
             }
             code::CMP_GE => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_pop(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_pop(&mut stack)?;
                 stack.push(Value::Bool(!v1.cmp_lt(&v2)?));
             }
             code::CMP_LE => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_pop(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_pop(&mut stack)?;
                 stack.push(Value::Bool(!v1.cmp_gt(&v2)?));
             }
             code::NOT => {
-                let v = stack_top_mut(&mut stack, ptr)?;
+                let v = stack_top_mut(&mut stack)?;
                 match v {
                     Value::Bool(b) => *b = !*b,
                     _ => return Err(VMError::InvalidType {
@@ -436,37 +371,37 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
             }
             code::BAND => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 *v1.as_int_mut()? &= v2.as_int()?;
             }
             code::BOR => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 *v1.as_int_mut()? |= v2.as_int()?;
             }
             code::BXOR => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 *v1.as_int_mut()? ^= v2.as_int()?;
             }
             code::BINV => {
-                let v = stack_top_mut(&mut stack, ptr)?;
+                let v = stack_top_mut(&mut stack)?;
                 let i = v.as_int_mut()?;
                 *i = !*i;
             }
             code::SHL => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 *v1.as_int_mut()? <<= v2.as_int()?;
             }
             code::SHR => {
-                let v2 = stack_pop(&mut stack, ptr)?;
-                let v1 = stack_top_mut(&mut stack, ptr)?;
+                let v2 = stack_pop(&mut stack)?;
+                let v1 = stack_top_mut(&mut stack)?;
                 *v1.as_int_mut()? >>= v2.as_int()?;
             }
             code::LEN => {
-                let v = stack_pop(&mut stack, ptr)?;
+                let v = stack_pop(&mut stack)?;
                 let len = match &v {
                     Value::String(s) => s.len(),
                     Value::Object(o) => o.borrow().get().len(),
@@ -486,7 +421,7 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
                 }
                 stack.push(Value::new_str(str));
             }
-            code::OUT => println!("{}", stack_pop(&mut stack, ptr)?.to_string()),
+            code::OUT => println!("{}", stack_pop(&mut stack)?.to_string()),
             code::LOAD_LIB => {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 stack.push(libs.get(str)
@@ -498,6 +433,17 @@ pub fn run_program(program: &ProgramBundle) -> Result<(), VMError> {
     }
 
     assert!(stack.len() == 1);
+
+    Ok(stack.pop().unwrap())
+}
+
+pub fn execute_program(program: &ProgramBundle) -> Result<(), VMError> {
+    let mut libs = HashMap::new();
+    libraries::misc::load_libs(&mut libs);
+    libraries::types::load_libs(&mut libs);
+    libraries::arrays::load_libs(&mut libs);
+
+    execute_closure(program, &mut libs, 0, Gc::new(Variables::new(None)), vec![])?;
 
     Ok(())
 }
