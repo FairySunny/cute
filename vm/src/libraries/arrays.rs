@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use gc::Gc;
 use crate::{types::{Value, VMError, Variables}, executor};
 
-pub fn load_libs(libs: &mut HashMap<String, Value>) {
-    libs.insert("arrays".to_owned(), Value::new_lib_obj(|obj| {
-        obj.insert("push".to_owned(), Value::NativeFunction(|_, _, mut args| {
+pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
+    libs.insert("arrays".into(), Value::new_lib_obj(|obj| {
+        obj.insert("push".into(), Value::NativeFunction(|_, _, mut args| {
             if args.len() < 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -12,14 +12,14 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
             args[0].as_arr()?.borrow_mut().get_mut()?.append(&mut elements);
             Ok(Value::Null)
         }));
-        obj.insert("pop".to_owned(), Value::NativeFunction(|_, _, args| {
+        obj.insert("pop".into(), Value::NativeFunction(|_, _, args| {
             if args.len() != 1 {
                 return Err(VMError::IllegalFunctionArguments);
             }
             args[0].as_arr()?.borrow_mut().get_mut()?.pop()
                 .ok_or_else(|| VMError::ArrayIndexOutOfBound)
         }));
-        obj.insert("splice".to_owned(), Value::NativeFunction(|_, _, mut args| {
+        obj.insert("splice".into(), Value::NativeFunction(|_, _, mut args| {
             if args.len() < 3 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -34,7 +34,7 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
             }
             Ok(Value::new_arr(arr.get_mut()?.splice(start .. end, elements).collect()))
         }));
-        obj.insert("slice".to_owned(), Value::NativeFunction(|_, _, args| {
+        obj.insert("slice".into(), Value::NativeFunction(|_, _, args| {
             if args.len() < 2 || args.len() > 3 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -49,7 +49,7 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
             }
             Ok(Value::new_arr(arr.get()[start .. end].to_owned()))
         }));
-        obj.insert("for_each".to_owned(), Value::NativeFunction(|program, libs, args| {
+        obj.insert("for_each".into(), Value::NativeFunction(|program, libs, args| {
             if args.len() != 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -65,7 +65,7 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
             }
             Ok(Value::Null)
         }));
-        obj.insert("filter".to_owned(), Value::NativeFunction(|program, libs, args| {
+        obj.insert("filter".into(), Value::NativeFunction(|program, libs, args| {
             if args.len() != 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -86,7 +86,7 @@ pub fn load_libs(libs: &mut HashMap<String, Value>) {
             filtered.shrink_to_fit();
             Ok(Value::new_arr(filtered))
         }));
-        obj.insert("map".to_owned(), Value::NativeFunction(|program, libs, args| {
+        obj.insert("map".into(), Value::NativeFunction(|program, libs, args| {
             if args.len() != 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }

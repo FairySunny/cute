@@ -1,18 +1,18 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use crate::types::Value;
 
-pub fn load_libs(libs: &mut HashMap<String, Value>) {
+pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
     // the 'global' object
-    libs.insert("G".to_owned(), Value::new_obj());
+    libs.insert("G".into(), Value::new_obj());
 
     // the null constant
-    libs.insert("null".to_owned(), Value::Null);
+    libs.insert("null".into(), Value::Null);
 
     // boolean constants
-    libs.insert("true".to_owned(), Value::Bool(true));
-    libs.insert("false".to_owned(), Value::Bool(false));
+    libs.insert("true".into(), Value::Bool(true));
+    libs.insert("false".into(), Value::Bool(false));
 
     // float constants
-    libs.insert("nan".to_owned(), Value::Float(f64::NAN));
-    libs.insert("inf".to_owned(), Value::Float(f64::INFINITY));
+    libs.insert("nan".into(), Value::Float(f64::NAN));
+    libs.insert("inf".into(), Value::Float(f64::INFINITY));
 }

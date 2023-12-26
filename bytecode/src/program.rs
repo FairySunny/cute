@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use crate::code;
 
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub enum GeneratingError {
 pub enum Constant {
     Int(i64),
     Float(f64),
-    String(String)
+    String(Rc<str>)
 }
 
 #[derive(Default)]
@@ -20,7 +20,7 @@ struct ConstantPool {
     constant_list: Vec<Constant>,
     int_map: HashMap<i64, usize>,
     float_map: HashMap<u64, usize>,
-    str_map: HashMap<String, usize>
+    str_map: HashMap<Rc<str>, usize>
 }
 
 impl ConstantPool {
@@ -52,8 +52,9 @@ impl ConstantPool {
         }
         // string does not exist, create
         let idx = self.constant_list.len();
-        self.constant_list.push(Constant::String(s.to_owned()));
-        self.str_map.insert(s.to_owned(), idx);
+        let str: Rc<str> = Rc::from(s);
+        self.constant_list.push(Constant::String(str.clone()));
+        self.str_map.insert(str, idx);
         idx
     }
 }

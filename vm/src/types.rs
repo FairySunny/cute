@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::program::ProgramBundle;
 
@@ -13,7 +13,7 @@ pub enum VMError {
     InvalidType { expected: &'static str, got: &'static str },
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
-    UnknownLibrary(String),
+    UnknownLibrary(Rc<str>),
     ObjectLocked,
     IllegalFunctionArguments
 }
@@ -68,7 +68,7 @@ impl Variables {
         }
     }
 
-    pub fn this_obj(&self) -> &Gc<GcCell<Lockable<HashMap<String, Value>>>> {
+    pub fn this_obj(&self) -> &Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>> {
         self.this.as_obj().expect("`Variables.this` is not object")
     }
 }
@@ -85,13 +85,13 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
-    String(Gc<String>),
-    Object(Gc<GcCell<Lockable<HashMap<String, Value>>>>),
+    String(Rc<str>),
+    Object(Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>),
     Array(Gc<GcCell<Lockable<Vec<Value>>>>),
     Closure(Closure),
     NativeFunction(
         #[unsafe_ignore_trace]
-        fn(&ProgramBundle, &mut HashMap<String, Value>, Vec<Value>) -> Result<Value, VMError>
+        fn(&ProgramBundle, &mut HashMap<Rc<str>, Value>, Vec<Value>) -> Result<Value, VMError>
     )
 }
 
@@ -110,15 +110,11 @@ impl Value {
         }
     }
 
-    pub fn new_str(s: impl Into<String>) -> Self {
-        Self::String(Gc::new(s.into()))
-    }
-
     pub fn new_obj() -> Self {
         Self::Object(Gc::new(GcCell::new(Lockable::new(HashMap::new(), false))))
     }
 
-    pub fn new_lib_obj(create: impl FnOnce(&mut HashMap<String, Value>)) -> Self {
+    pub fn new_lib_obj(create: impl FnOnce(&mut HashMap<Rc<str>, Value>)) -> Self {
         let lib = Value::new_obj();
         let mut lib_obj = lib.as_obj().unwrap().borrow_mut();
         create(lib_obj.get_mut().unwrap());
@@ -164,14 +160,14 @@ impl Value {
         }
     }
 
-    pub fn as_str(&self) -> Result<&str, VMError> {
+    pub fn as_str(&self) -> Result<&Rc<str>, VMError> {
         match self {
             Value::String(s) => Ok(s),
             _ => Err(VMError::InvalidType { expected: "string", got: self.type_to_str() })
         }
     }
 
-    pub fn as_obj(&self) -> Result<&Gc<GcCell<Lockable<HashMap<String, Value>>>>, VMError> {
+    pub fn as_obj(&self) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>, VMError> {
         match self {
             Value::Object(o) => Ok(o),
             _ => Err(VMError::InvalidType { expected: "object", got: self.type_to_str() })
@@ -238,7 +234,7 @@ impl Value {
         Ok(match self {
             Value::Int(i) => *i > other.as_int()?,
             Value::Float(f) => *f > other.as_float()?,
-            Value::String(s) => s.as_str() > other.as_str()?,
+            Value::String(s) => s > other.as_str()?,
             _ => return Err(VMError::InvalidType {
                 expected: "int/float/string",
                 got: self.type_to_str()
@@ -250,7 +246,7 @@ impl Value {
         Ok(match self {
             Value::Int(i) => *i < other.as_int()?,
             Value::Float(f) => *f < other.as_float()?,
-            Value::String(s) => s.as_str() < other.as_str()?,
+            Value::String(s) => s < other.as_str()?,
             _ => return Err(VMError::InvalidType {
                 expected: "int/float/string",
                 got: self.type_to_str()

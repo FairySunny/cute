@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use gc::{Gc, GcCell};
 use bytecode::{program::{ProgramBundle, Constant}, code};
 use crate::{types::{VMError, Lockable, Variables, Closure, Value}, libraries};
@@ -11,7 +11,7 @@ fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     Ok(code)
 }
 
-fn next_str<'a>(func: &Vec<u8>, pc: &mut usize, program: &'a ProgramBundle) -> Result<&'a str, VMError> {
+fn next_str<'a>(func: &Vec<u8>, pc: &mut usize, program: &'a ProgramBundle) -> Result<&'a Rc<str>, VMError> {
     let str_idx: usize = next(func, pc)?.into();
     let constant = get_constant(program, str_idx)?;
     match constant {
@@ -37,7 +37,7 @@ fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
     stack.pop().ok_or_else(|| VMError::BadStack)
 }
 
-fn parent(variables: &Gc<Variables>) -> Result<&Gc<GcCell<Lockable<HashMap<String, Value>>>>, VMError> {
+fn parent(variables: &Gc<Variables>) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>, VMError> {
     Ok(variables.parent.as_ref()
         .ok_or_else(|| VMError::SuperDoesNotExist)?
         .this_obj())
@@ -45,7 +45,7 @@ fn parent(variables: &Gc<Variables>) -> Result<&Gc<GcCell<Lockable<HashMap<Strin
 
 pub fn execute_closure(
     program: &ProgramBundle,
-    libs: &mut HashMap<String, Value>,
+    libs: &mut HashMap<Rc<str>, Value>,
     func_idx: usize,
     variables: Gc<Variables>,
     args: Vec<Value>
@@ -113,7 +113,7 @@ pub fn execute_closure(
                 match &value {
                     Value::Null => this.borrow_mut().get_mut()?.remove(str),
                     _ => this.borrow_mut().get_mut()?
-                        .insert(str.to_owned(), value)
+                        .insert(str.clone(), value)
                 };
             }
             code::STORE_SUPER => {
@@ -122,7 +122,7 @@ pub fn execute_closure(
                 match &value {
                     Value::Null => parent(&variables)?.borrow_mut().get_mut()?.remove(str),
                     _ => parent(&variables)?.borrow_mut().get_mut()?
-                        .insert(str.to_owned(), value)
+                        .insert(str.clone(), value)
                 };
             }
             code::STORE_FIELD => {
@@ -132,7 +132,7 @@ pub fn execute_closure(
                 match &value {
                     Value::Null => obj.as_obj()?.borrow_mut().get_mut()?.remove(str),
                     _ => obj.as_obj()?.borrow_mut().get_mut()?
-                        .insert(str.to_owned(), value.clone())
+                        .insert(str.clone(), value.clone())
                 };
             }
             code::STORE_ITEM => {
@@ -145,7 +145,7 @@ pub fn execute_closure(
                         match &value {
                             Value::Null => o.borrow_mut().get_mut()?.remove(idx),
                             _ => o.borrow_mut().get_mut()?
-                                .insert(idx.to_owned(), value.clone())
+                                .insert(idx.clone(), value.clone())
                         };
                     }
                     Value::Array(a) => {
@@ -185,7 +185,7 @@ pub fn execute_closure(
                 stack.push(match get_constant(program, const_idx)? {
                     Constant::Int(v) => Value::Int(*v),
                     Constant::Float(v) => Value::Float(*v),
-                    Constant::String(v) => Value::new_str(v)
+                    Constant::String(v) => Value::String(v.clone())
                 });
             }
             code::NEW_ARRAY => {
@@ -271,7 +271,7 @@ pub fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 += v2.as_int()?,
                     Value::Float(v1) => *v1 += v2.as_float()?,
-                    Value::String(s) => *v1 = Value::new_str(s.to_string() + v2.as_str()?),
+                    Value::String(s) => *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
                     _ => return Err(VMError::InvalidType {
                         expected: "int/float/string",
                         got: v1.type_to_str()
@@ -419,13 +419,13 @@ pub fn execute_closure(
                 if str.ends_with("\n") {
                     str.truncate(str.len() - 1);
                 }
-                stack.push(Value::new_str(str));
+                stack.push(Value::String(str.into()));
             }
             code::OUT => println!("{}", stack_pop(&mut stack)?.to_string()),
             code::LOAD_LIB => {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 stack.push(libs.get(str)
-                    .ok_or_else(|| VMError::UnknownLibrary(str.to_owned()))?
+                    .ok_or_else(|| VMError::UnknownLibrary(str.clone()))?
                     .clone());
             }
             _ => return Err(VMError::UnknownInstruction(code))
