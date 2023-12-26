@@ -11,13 +11,22 @@ pub enum VMError {
     ConstantIndexOutOfBound,
     ConstantNotString,
     BadStack,
-    InvalidType { expected: &'static str, got: &'static str },
+    InvalidType { expected: String, got: String },
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
     UnknownLibrary(String),
     ObjectLocked,
     IllegalFunctionArguments,
     IOError(io::Error)
+}
+
+impl VMError {
+    pub fn invalid_type(expected: &str, got: &str) -> Self {
+        Self::InvalidType {
+            expected: expected.to_owned(),
+            got: got.to_owned()
+        }
+    }
 }
 
 impl From<io::Error> for VMError {
@@ -146,14 +155,14 @@ impl Value {
     pub fn as_int(&self) -> Result<i64, VMError> {
         match self {
             Value::Int(i) => Ok(*i),
-            _ => Err(VMError::InvalidType { expected: "int", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("int", self.type_to_str()))
         }
     }
 
     pub fn as_int_mut(&mut self) -> Result<&mut i64, VMError> {
         match self {
             Value::Int(i) => Ok(i),
-            _ => Err(VMError::InvalidType { expected: "int", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("int", self.type_to_str()))
         }
     }
 
@@ -165,42 +174,42 @@ impl Value {
     pub fn as_float(&self) -> Result<f64, VMError> {
         match self {
             Value::Float(f) => Ok(*f),
-            _ => Err(VMError::InvalidType { expected: "float", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("float", self.type_to_str()))
         }
     }
 
     pub fn as_bool(&self) -> Result<bool, VMError> {
         match self {
             Value::Bool(b) => Ok(*b),
-            _ => Err(VMError::InvalidType { expected: "bool", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("bool", self.type_to_str()))
         }
     }
 
     pub fn as_str(&self) -> Result<&Rc<str>, VMError> {
         match self {
             Value::String(s) => Ok(s),
-            _ => Err(VMError::InvalidType { expected: "string", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("string", self.type_to_str()))
         }
     }
 
     pub fn as_obj(&self) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>, VMError> {
         match self {
             Value::Object(o) => Ok(o),
-            _ => Err(VMError::InvalidType { expected: "object", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("object", self.type_to_str()))
         }
     }
 
     pub fn as_arr(&self) -> Result<&Gc<GcCell<Lockable<Vec<Value>>>>, VMError> {
         match self {
             Value::Array(a) => Ok(a),
-            _ => Err(VMError::InvalidType { expected: "array", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("array", self.type_to_str()))
         }
     }
 
     pub fn as_closure(&self) -> Result<&Closure, VMError> {
         match self {
             Value::Closure(c) => Ok(c),
-            _ => Err(VMError::InvalidType { expected: "closure", got: self.type_to_str() })
+            _ => Err(VMError::invalid_type("closure", self.type_to_str()))
         }
     }
 
@@ -251,10 +260,7 @@ impl Value {
             Value::Int(i) => *i > other.as_int()?,
             Value::Float(f) => *f > other.as_float()?,
             Value::String(s) => s > other.as_str()?,
-            _ => return Err(VMError::InvalidType {
-                expected: "int/float/string",
-                got: self.type_to_str()
-            })
+            _ => return Err(VMError::invalid_type("int/float/string", self.type_to_str()))
         })
     }
 
@@ -263,10 +269,7 @@ impl Value {
             Value::Int(i) => *i < other.as_int()?,
             Value::Float(f) => *f < other.as_float()?,
             Value::String(s) => s < other.as_str()?,
-            _ => return Err(VMError::InvalidType {
-                expected: "int/float/string",
-                got: self.type_to_str()
-            })
+            _ => return Err(VMError::invalid_type("int/float/string", self.type_to_str()))
         })
     }
 

@@ -46,6 +46,42 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::new_arr(arr.get()[start .. end].to_owned()))
     }));
 
+    lib.insert("find_first_index".into(), Value::NativeFunction(|ctx, args| {
+        Value::check_arg_cnt(&args, 2)?;
+        let arr = args[0].as_arr()?.borrow().get().clone();
+        let closure = args[1].as_closure()?;
+        for (idx, elem) in arr.into_iter().enumerate() {
+            let res = executor::execute_closure(
+                ctx,
+                closure.program_idx,
+                closure.func_idx,
+                Gc::new(Variables::new(Some(&closure.parent))),
+                vec![elem, Value::Int(idx as i64)])?;
+            if res.as_bool()? {
+                return Ok(Value::Int(idx as i64));
+            }
+        }
+        return Ok(Value::Int(-1));
+    }));
+
+    lib.insert("find_last_index".into(), Value::NativeFunction(|ctx, args| {
+        Value::check_arg_cnt(&args, 2)?;
+        let arr = args[0].as_arr()?.borrow().get().clone();
+        let closure = args[1].as_closure()?;
+        for (idx, elem) in arr.into_iter().enumerate().rev() {
+            let res = executor::execute_closure(
+                ctx,
+                closure.program_idx,
+                closure.func_idx,
+                Gc::new(Variables::new(Some(&closure.parent))),
+                vec![elem, Value::Int(idx as i64)])?;
+            if res.as_bool()? {
+                return Ok(Value::Int(idx as i64));
+            }
+        }
+        return Ok(Value::Int(-1));
+    }));
+
     lib.insert("for_each".into(), Value::NativeFunction(|ctx, args| {
         Value::check_arg_cnt(&args, 2)?;
         let arr = args[0].as_arr()?.borrow().get().clone();

@@ -9,6 +9,20 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::String(args[0].type_to_str().into()))
     }));
 
+    lib.insert("require".into(), Value::NativeFunction(|_, args| {
+        Value::check_arg_range(&args, 2..)?;
+        let type_str = args[0].type_to_str();
+        let mut required = Vec::with_capacity(args.len() - 1);
+        for arg in &args[1..] {
+            let arg_str = arg.as_str()?.as_ref();
+            if type_str == arg_str {
+                return Ok(Value::Null);
+            }
+            required.push(arg_str);
+        }
+        Err(VMError::invalid_type(&required.join("/"), type_str))
+    }));
+
     lib.insert("to_string".into(), Value::NativeFunction(|_, args| {
         Value::check_arg_cnt(&args, 1)?;
         Ok(match &args[0] {

@@ -100,10 +100,7 @@ pub fn execute_closure(
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
                             .clone());
                     }
-                    _ => return Err(VMError::InvalidType {
-                        expected: "object/array",
-                        got: obj.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("object/array", obj.type_to_str()))
                 }
             }
             code::STORE => {
@@ -152,10 +149,7 @@ pub fn execute_closure(
                         *a.borrow_mut().get_mut()?.get_mut(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
                     }
-                    _ => return Err(VMError::InvalidType {
-                        expected: "object/array",
-                        got: obj.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("object/array", obj.type_to_str()))
                 }
             }
             code::DUP => stack.push(stack_top(&stack)?.clone()),
@@ -258,10 +252,9 @@ pub fn execute_closure(
                     Value::NativeFunction(func) => stack.push(
                         func(ctx, args)?
                     ),
-                    v => return Err(VMError::InvalidType {
-                        expected: "closure/native function",
-                        got: v.type_to_str()
-                    })
+                    v => return Err(
+                        VMError::invalid_type("closure/native function", v.type_to_str())
+                    )
                 }
             }
             code::RETURN => break,
@@ -272,10 +265,7 @@ pub fn execute_closure(
                     Value::Int(v1) => *v1 += v2.as_int()?,
                     Value::Float(v1) => *v1 += v2.as_float()?,
                     Value::String(s) => *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
-                    _ => return Err(VMError::InvalidType {
-                        expected: "int/float/string",
-                        got: v1.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("int/float/string", v1.type_to_str()))
                 }
             }
             code::SUB => {
@@ -284,10 +274,7 @@ pub fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 -= v2.as_int()?,
                     Value::Float(v1) => *v1 -= v2.as_float()?,
-                    _ => return Err(VMError::InvalidType {
-                        expected: "int/float",
-                        got: v1.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("int/float", v1.type_to_str()))
                 }
             }
             code::MUL => {
@@ -296,10 +283,7 @@ pub fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 *= v2.as_int()?,
                     Value::Float(v1) => *v1 *= v2.as_float()?,
-                    _ => return Err(VMError::InvalidType {
-                        expected: "int/float",
-                        got: v1.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("int/float", v1.type_to_str()))
                 }
             }
             code::DIV => {
@@ -308,10 +292,7 @@ pub fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 /= v2.as_int()?,
                     Value::Float(v1) => *v1 /= v2.as_float()?,
-                    _ => return Err(VMError::InvalidType {
-                        expected: "int/float",
-                        got: v1.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("int/float", v1.type_to_str()))
                 }
             }
             code::MOD => {
@@ -324,10 +305,7 @@ pub fn execute_closure(
                 match v {
                     Value::Int(v) => *v = -*v,
                     Value::Float(v) => *v = -*v,
-                    _ => return Err(VMError::InvalidType {
-                        expected: "int/float",
-                        got: v.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("int/float", v.type_to_str()))
                 }
             }
             code::CMP_EQ => {
@@ -364,10 +342,7 @@ pub fn execute_closure(
                 let v = stack_top_mut(&mut stack)?;
                 match v {
                     Value::Bool(b) => *b = !*b,
-                    _ => return Err(VMError::InvalidType {
-                        expected: "bool",
-                        got: v.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("bool", v.type_to_str()))
                 }
             }
             code::BAND => {
@@ -406,10 +381,7 @@ pub fn execute_closure(
                     Value::String(s) => s.len(),
                     Value::Object(o) => o.borrow().get().len(),
                     Value::Array(a) => a.borrow().get().len(),
-                    _ => return Err(VMError::InvalidType {
-                        expected: "string/object/array",
-                        got: v.type_to_str()
-                    })
+                    _ => return Err(VMError::invalid_type("string/object/array", v.type_to_str()))
                 };
                 stack.push(Value::Int(len as i64));
             }
