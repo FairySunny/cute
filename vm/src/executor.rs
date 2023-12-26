@@ -241,13 +241,7 @@ pub fn execute_closure(
                 let func = stack.pop().unwrap();
                 match &func {
                     Value::Closure(closure) => stack.push(
-                        execute_closure(
-                            ctx,
-                            closure.program_idx,
-                            closure.func_idx,
-                            Gc::new(Variables::new(Some(&closure.parent))),
-                            args
-                        )?
+                        call(ctx, closure, args)?
                     ),
                     Value::NativeFunction(func) => stack.push(
                         func(ctx, args)?
@@ -405,7 +399,7 @@ pub fn execute_closure(
                         let lib_name = str.clone();
                         let lib_prog_idx = ctx.add_program(lib_prog);
                         let lib = execute_closure(
-                            ctx, lib_prog_idx, 0, Gc::new(Variables::new(None)), vec![]
+                            ctx, lib_prog_idx, 0, Variables::new_gc(None), vec![]
                         )?;
                         ctx.add_lib(lib_name, lib.clone());
                         lib
@@ -422,10 +416,23 @@ pub fn execute_closure(
     Ok(stack.pop().unwrap())
 }
 
+pub fn call(
+    ctx: &mut Context,
+    closure: & Closure,
+    args: Vec<Value>) -> Result<Value, VMError> {
+    execute_closure(
+        ctx,
+        closure.program_idx,
+        closure.func_idx,
+        Variables::new_gc(Some(&closure.parent)),
+        args
+    )
+}
+
 pub fn execute_program(program: ProgramBundle, paths: Vec<String>) -> Result<(), VMError> {
     let mut ctx = Context::new(program, paths);
 
-    execute_closure(&mut ctx, 0, 0, Gc::new(Variables::new(None)), vec![])?;
+    execute_closure(&mut ctx, 0, 0, Variables::new_gc(None), vec![])?;
 
     Ok(())
 }

@@ -85,6 +85,10 @@ impl Variables {
         }
     }
 
+    pub fn new_gc(parent: Option<&Gc<Variables>>) -> Gc<Self> {
+        Gc::new(Self::new(parent))
+    }
+
     pub fn this(&self) -> &Value {
         &self.this
     }

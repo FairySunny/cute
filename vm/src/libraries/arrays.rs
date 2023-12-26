@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use gc::Gc;
-use crate::{types::{VMError, Variables, Value, Context}, executor};
+use crate::{types::{VMError, Value, Context}, executor};
 
 pub fn load_libs(ctx: &mut Context) {
     let mut lib = HashMap::new();
@@ -51,12 +50,11 @@ pub fn load_libs(ctx: &mut Context) {
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate() {
-            let res = executor::execute_closure(
+            let res = executor::call(
                 ctx,
-                closure.program_idx,
-                closure.func_idx,
-                Gc::new(Variables::new(Some(&closure.parent))),
-                vec![elem, Value::Int(idx as i64)])?;
+                closure,
+                vec![elem, Value::Int(idx as i64)]
+            )?;
             if res.as_bool()? {
                 return Ok(Value::Int(idx as i64));
             }
@@ -69,12 +67,11 @@ pub fn load_libs(ctx: &mut Context) {
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate().rev() {
-            let res = executor::execute_closure(
+            let res = executor::call(
                 ctx,
-                closure.program_idx,
-                closure.func_idx,
-                Gc::new(Variables::new(Some(&closure.parent))),
-                vec![elem, Value::Int(idx as i64)])?;
+                closure,
+                vec![elem, Value::Int(idx as i64)]
+            )?;
             if res.as_bool()? {
                 return Ok(Value::Int(idx as i64));
             }
@@ -87,11 +84,9 @@ pub fn load_libs(ctx: &mut Context) {
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate() {
-            executor::execute_closure(
+            executor::call(
                 ctx,
-                closure.program_idx,
-                closure.func_idx,
-                Gc::new(Variables::new(Some(&closure.parent))),
+                closure,
                 vec![elem, Value::Int(idx as i64)]
             )?;
         }
@@ -104,11 +99,9 @@ pub fn load_libs(ctx: &mut Context) {
         let closure = args[1].as_closure()?;
         let mut filtered = Vec::with_capacity(arr.len());
         for (idx, elem) in arr.into_iter().enumerate() {
-            let res = executor::execute_closure(
+            let res = executor::call(
                 ctx,
-                closure.program_idx,
-                closure.func_idx,
-                Gc::new(Variables::new(Some(&closure.parent))),
+                closure,
                 vec![elem.clone(), Value::Int(idx as i64)]
             )?;
             if res.as_bool()? {
@@ -125,11 +118,9 @@ pub fn load_libs(ctx: &mut Context) {
         let closure = args[1].as_closure()?;
         let mut mapped = Vec::with_capacity(arr.len());
         for (idx, elem) in arr.into_iter().enumerate() {
-            let res = executor::execute_closure(
+            let res = executor::call(
                 ctx,
-                closure.program_idx,
-                closure.func_idx,
-                Gc::new(Variables::new(Some(&closure.parent))),
+                closure,
                 vec![elem, Value::Int(idx as i64)]
             )?;
             mapped.push(res);
