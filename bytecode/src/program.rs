@@ -90,11 +90,6 @@ pub struct JumpWhere {
     pos: usize
 }
 
-pub struct ProgramBundle {
-    pub constant_pool: Vec<Constant>,
-    pub func_list: Vec<Vec<u8>>
-}
-
 impl Program {
     fn current_func(&self) -> &Func {
         &self.func_list[*self.idx.last().unwrap()]
@@ -209,11 +204,18 @@ impl Program {
             func_list: self.func_list.into_iter().map(|f| f.code).collect()
         }
     }
+}
 
+pub struct ProgramBundle {
+    pub constant_pool: Vec<Constant>,
+    pub func_list: Vec<Vec<u8>>
+}
+
+impl ProgramBundle {
     pub fn print(&self) {
         eprintln!("Constant Pool:");
         eprintln!();
-        for (idx, constant) in self.constant_pool.constant_list.iter().enumerate() {
+        for (idx, constant) in self.constant_pool.iter().enumerate() {
             eprint!("  #{idx} ");
             match constant {
                 Constant::Int(v) => eprintln!("int: {v}"),
@@ -229,12 +231,12 @@ impl Program {
             eprintln!();
             eprintln!("  #{idx}:");
             let mut idx = 0;
-            while idx < func.code.len() {
-                let info = &code::CODE_INFO[func.code[idx] as usize];
+            while idx < func.len() {
+                let info = &code::CODE_INFO[func[idx] as usize];
                 idx += 1;
                 eprint!("    {}", info.name);
                 for _ in 0..info.params {
-                    eprint!(" {:#x}", func.code[idx]);
+                    eprint!(" {:#x}", func[idx]);
                     idx += 1;
                 }
                 eprintln!();

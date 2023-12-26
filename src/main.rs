@@ -1,6 +1,4 @@
 use std::{env, io, fs, process};
-use bytecode::program::Program;
-use compiler::{lexer::Lexer, parser};
 use vm::executor;
 
 fn main() {
@@ -31,11 +29,10 @@ fn main() {
 
     let path = env::current_dir().unwrap().to_str().unwrap().to_owned();
 
-    let mut program = Program::new();
-    parser::parse(Lexer::new(source.chars()), &mut program);
+    let program = compiler::compile_chars(source.chars());
     program.print();
-    let bundle = program.bundle();
-    executor::execute_program(bundle, vec![path])
+
+    executor::execute_program(program, vec![path])
         .unwrap_or_else(|e| {
             eprintln!("Error executing script: {:?}", e);
             process::exit(1);

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, io, path::{Path, PathBuf}};
+use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::{Path, PathBuf}};
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::program::ProgramBundle;
 use crate::libraries;
@@ -14,7 +14,7 @@ pub enum VMError {
     InvalidType { expected: &'static str, got: &'static str },
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
-    UnknownLibrary(Rc<str>),
+    UnknownLibrary(String),
     ObjectLocked,
     IllegalFunctionArguments,
     IOError(io::Error)
@@ -64,20 +64,32 @@ impl<T> Lockable<T> {
 
 #[derive(Trace, Finalize)]
 pub struct Variables {
-    pub parent: Option<Gc<Variables>>,
-    pub this: Value
+    parent: Option<Gc<Variables>>,
+    this: Value
 }
 
 impl Variables {
     pub fn new(parent: Option<&Gc<Variables>>) -> Self {
         Self {
             parent: parent.map(|p| p.clone()),
-            this: Value::new_obj()
+            this: Value::new_obj(HashMap::new())
         }
+    }
+
+    pub fn this(&self) -> &Value {
+        &self.this
     }
 
     pub fn this_obj(&self) -> &Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>> {
         self.this.as_obj().expect("`Variables.this` is not object")
+    }
+
+    pub fn parent(&self) -> Result<&Gc<Variables>, VMError> {
+        self.parent.as_ref().ok_or_else(|| VMError::SuperDoesNotExist)
+    }
+
+    pub fn parent_obj(&self) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>, VMError> {
+        Ok(self.parent()?.this_obj())
     }
 }
 
@@ -119,17 +131,12 @@ impl Value {
         }
     }
 
-    pub fn new_obj() -> Self {
-        Self::Object(Gc::new(GcCell::new(Lockable::new(HashMap::new(), false))))
+    pub fn new_obj(o: HashMap<Rc<str>, Value>) -> Self {
+        Self::Object(Gc::new(GcCell::new(Lockable::new(o, false))))
     }
 
-    pub fn new_lib_obj(create: impl FnOnce(&mut HashMap<Rc<str>, Value>)) -> Self {
-        let lib = Value::new_obj();
-        let mut lib_obj = lib.as_obj().unwrap().borrow_mut();
-        create(lib_obj.get_mut().unwrap());
-        lib_obj.lock();
-        drop(lib_obj);
-        lib
+    pub fn new_locked_obj(o: HashMap<Rc<str>, Value>) -> Self {
+        Self::Object(Gc::new(GcCell::new(Lockable::new(o, true))))
     }
 
     pub fn new_arr(a: Vec<Value>) -> Self {
@@ -274,6 +281,22 @@ impl Value {
             Value::Array(_) => "[array]".to_owned(),
             Value::Closure(_) => "[closure]".to_owned(),
             Value::NativeFunction(_) => "[native function]".to_owned()
+        }
+    }
+
+    pub fn check_arg_cnt(args: &Vec<Value>, cnt: usize) -> Result<(), VMError> {
+        if cnt == args.len() {
+            Ok(())
+        } else {
+            Err(VMError::IllegalFunctionArguments)
+        }
+    }
+
+    pub fn check_arg_range(args: &Vec<Value>, range: impl RangeBounds<usize>) -> Result<(), VMError> {
+        if range.contains(&args.len()) {
+            Ok(())
+        } else {
+            Err(VMError::IllegalFunctionArguments)
         }
     }
 }

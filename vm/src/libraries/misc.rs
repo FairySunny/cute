@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use crate::types::{Value, Context};
 
 pub fn load_libs(ctx: &mut Context) {
     // the 'global' object
-    ctx.add_lib("G".into(), Value::new_obj());
+    ctx.add_lib("G".into(), Value::new_obj(HashMap::new()));
 
     // the null constant
     ctx.add_lib("null".into(), Value::Null);

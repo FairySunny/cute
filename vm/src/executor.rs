@@ -1,7 +1,7 @@
-use std::{collections::HashMap, rc::Rc};
-use gc::{Gc, GcCell};
+use std::rc::Rc;
+use gc::Gc;
 use bytecode::{program::{ProgramBundle, Constant}, code};
-use crate::types::{VMError, Lockable, Variables, Closure, Value, Context};
+use crate::types::{VMError, Variables, Closure, Value, Context};
 
 fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     let code = *func.get(*pc)
@@ -37,12 +37,6 @@ fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
     stack.pop().ok_or_else(|| VMError::BadStack)
 }
 
-fn parent(variables: &Gc<Variables>) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>, VMError> {
-    Ok(variables.parent.as_ref()
-        .ok_or_else(|| VMError::SuperDoesNotExist)?
-        .this_obj())
-}
-
 pub fn execute_closure(
     ctx: &mut Context,
     program_idx: usize,
@@ -76,7 +70,7 @@ pub fn execute_closure(
             }
             code::LOAD_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match parent(&variables)?.borrow().get().get(str) {
+                match variables.parent_obj()?.borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
@@ -125,8 +119,8 @@ pub fn execute_closure(
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let value = stack_pop(&mut stack)?;
                 match &value {
-                    Value::Null => parent(&variables)?.borrow_mut().get_mut()?.remove(str),
-                    _ => parent(&variables)?.borrow_mut().get_mut()?
+                    Value::Null => variables.parent_obj()?.borrow_mut().get_mut()?.remove(str),
+                    _ => variables.parent_obj()?.borrow_mut().get_mut()?
                         .insert(str.clone(), value)
                 };
             }
@@ -205,15 +199,14 @@ pub fn execute_closure(
                 let arg_idx: usize = next(&cur_func, &mut pc)?.into();
                 stack.push(args.get(arg_idx).unwrap_or(&Value::Null).clone());
             }
-            code::PUSH_SELF => stack.push(variables.this.clone()),
+            code::PUSH_SELF => stack.push(variables.this().clone()),
             code::PUSH_SUPER => {
                 let lvl: u32 = next(&cur_func, &mut pc)?.into();
                 let mut vars = Box::new(&variables);
                 for _ in 0 .. lvl + 1 {
-                    vars = Box::new(vars.parent.as_ref()
-                        .ok_or_else(|| VMError::SuperDoesNotExist)?);
+                    vars = Box::new(vars.parent()?);
                 }
-                stack.push(vars.this.clone());
+                stack.push(vars.this().clone());
             }
             code::PUSH_CLOSURE => {
                 let idx: usize = next(&cur_func, &mut pc)?.into();
@@ -435,8 +428,8 @@ pub fn execute_closure(
                     Some(v) => v.clone(),
                     None => {
                         let lib_path = ctx.find_path(str)
-                            .ok_or_else(|| VMError::UnknownLibrary(str.clone()))?;
-                        let lib_prog = compiler::load_file(lib_path)?;
+                            .ok_or_else(|| VMError::UnknownLibrary(str.to_string()))?;
+                        let lib_prog = compiler::compile_file(lib_path)?;
                         let lib_name = str.clone();
                         let lib_prog_idx = ctx.add_program(lib_prog);
                         let lib = execute_closure(
