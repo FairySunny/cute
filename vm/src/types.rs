@@ -1,6 +1,7 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, io, path::{Path, PathBuf}};
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::program::ProgramBundle;
+use crate::libraries;
 
 #[derive(Debug)]
 pub enum VMError {
@@ -15,7 +16,14 @@ pub enum VMError {
     SuperDoesNotExist,
     UnknownLibrary(Rc<str>),
     ObjectLocked,
-    IllegalFunctionArguments
+    IllegalFunctionArguments,
+    IOError(io::Error)
+}
+
+impl From<io::Error> for VMError {
+    fn from(e: io::Error) -> Self {
+        Self::IOError(e)
+    }
 }
 
 #[derive(Trace, Finalize)]
@@ -76,6 +84,7 @@ impl Variables {
 #[derive(Clone, Trace, Finalize)]
 pub struct Closure {
     pub parent: Gc<Variables>,
+    pub program_idx: usize,
     pub func_idx: usize
 }
 
@@ -91,7 +100,7 @@ pub enum Value {
     Closure(Closure),
     NativeFunction(
         #[unsafe_ignore_trace]
-        fn(&ProgramBundle, &mut HashMap<Rc<str>, Value>, Vec<Value>) -> Result<Value, VMError>
+        fn(&mut Context, Vec<Value>) -> Result<Value, VMError>
     )
 }
 
@@ -266,5 +275,56 @@ impl Value {
             Value::Closure(_) => "[closure]".to_owned(),
             Value::NativeFunction(_) => "[native function]".to_owned()
         }
+    }
+}
+
+pub struct Context {
+    programs: Vec<ProgramBundle>,
+    libs: HashMap<Rc<str>, Value>,
+    paths: Vec<String>
+}
+
+impl Context {
+    pub fn new(program: ProgramBundle, paths: Vec<String>) -> Self {
+        let mut ctx = Self {
+            programs: vec![program],
+            libs: HashMap::new(),
+            paths
+        };
+
+        libraries::misc::load_libs(&mut ctx);
+        libraries::types::load_libs(&mut ctx);
+        libraries::arrays::load_libs(&mut ctx);
+
+        ctx
+    }
+
+    pub fn add_program(&mut self, program: ProgramBundle) -> usize {
+        let idx = self.programs.len();
+        self.programs.push(program);
+        idx
+    }
+
+    pub fn get_program(&self, idx: usize) -> &ProgramBundle {
+        &self.programs[idx]
+    }
+
+    pub fn add_lib(&mut self, name: Rc<str>, lib: Value) {
+        self.libs.insert(name, lib);
+    }
+
+    pub fn get_lib(&self, name: &str) -> Option<&Value> {
+        self.libs.get(name)
+    }
+
+    pub fn find_path(&self, name: &str) -> Option<PathBuf> {
+        self.paths.iter().find_map(|p| {
+            let file_path = Path::new(p).join(name.to_owned() + ".cute");
+            if file_path.is_file() {
+                Some(file_path)
+            } else {
+                None
+            }
+        })
     }
 }

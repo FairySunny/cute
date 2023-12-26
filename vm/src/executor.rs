@@ -1,7 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 use gc::{Gc, GcCell};
 use bytecode::{program::{ProgramBundle, Constant}, code};
-use crate::{types::{VMError, Lockable, Variables, Closure, Value}, libraries};
+use crate::types::{VMError, Lockable, Variables, Closure, Value, Context};
 
 fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     let code = *func.get(*pc)
@@ -44,14 +44,16 @@ fn parent(variables: &Gc<Variables>) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<st
 }
 
 pub fn execute_closure(
-    program: &ProgramBundle,
-    libs: &mut HashMap<Rc<str>, Value>,
+    ctx: &mut Context,
+    program_idx: usize,
     func_idx: usize,
     variables: Gc<Variables>,
     args: Vec<Value>
 ) -> Result<Value, VMError> {
-    let cur_func = program.func_list.get(func_idx)
-        .ok_or_else(|| VMError::FunctionIndexOutOfBound)?;
+    if func_idx >= ctx.get_program(program_idx).func_list.len() {
+        return Err(VMError::FunctionIndexOutOfBound);
+    }
+
     let this = variables.this_obj();
 
     let mut stack = vec![];
@@ -59,6 +61,9 @@ pub fn execute_closure(
     let mut pc = 0usize;
 
     loop {
+        let program = ctx.get_program(program_idx);
+        let cur_func = &program.func_list[func_idx];
+
         let code = next(&cur_func, &mut pc)?;
 
         match code {
@@ -214,6 +219,7 @@ pub fn execute_closure(
                 let idx: usize = next(&cur_func, &mut pc)?.into();
                 stack.push(Value::Closure(Closure {
                     parent: variables.clone(),
+                    program_idx,
                     func_idx: idx
                 }));
             }
@@ -249,14 +255,15 @@ pub fn execute_closure(
                 match &func {
                     Value::Closure(closure) => stack.push(
                         execute_closure(
-                            program, libs,
+                            ctx,
+                            closure.program_idx,
                             closure.func_idx,
                             Gc::new(Variables::new(Some(&closure.parent))),
                             args
                         )?
                     ),
                     Value::NativeFunction(func) => stack.push(
-                        func(program, libs, args)?
+                        func(ctx, args)?
                     ),
                     v => return Err(VMError::InvalidType {
                         expected: "closure/native function",
@@ -424,9 +431,22 @@ pub fn execute_closure(
             code::OUT => println!("{}", stack_pop(&mut stack)?.to_string()),
             code::LOAD_LIB => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                stack.push(libs.get(str)
-                    .ok_or_else(|| VMError::UnknownLibrary(str.clone()))?
-                    .clone());
+                let value = match ctx.get_lib(str) {
+                    Some(v) => v.clone(),
+                    None => {
+                        let lib_path = ctx.find_path(str)
+                            .ok_or_else(|| VMError::UnknownLibrary(str.clone()))?;
+                        let lib_prog = compiler::load_file(lib_path)?;
+                        let lib_name = str.clone();
+                        let lib_prog_idx = ctx.add_program(lib_prog);
+                        let lib = execute_closure(
+                            ctx, lib_prog_idx, 0, Gc::new(Variables::new(None)), vec![]
+                        )?;
+                        ctx.add_lib(lib_name, lib.clone());
+                        lib
+                    }
+                };
+                stack.push(value);
             }
             _ => return Err(VMError::UnknownInstruction(code))
         }
@@ -437,13 +457,10 @@ pub fn execute_closure(
     Ok(stack.pop().unwrap())
 }
 
-pub fn execute_program(program: &ProgramBundle) -> Result<(), VMError> {
-    let mut libs = HashMap::new();
-    libraries::misc::load_libs(&mut libs);
-    libraries::types::load_libs(&mut libs);
-    libraries::arrays::load_libs(&mut libs);
+pub fn execute_program(program: ProgramBundle, paths: Vec<String>) -> Result<(), VMError> {
+    let mut ctx = Context::new(program, paths);
 
-    execute_closure(program, &mut libs, 0, Gc::new(Variables::new(None)), vec![])?;
+    execute_closure(&mut ctx, 0, 0, Gc::new(Variables::new(None)), vec![])?;
 
     Ok(())
 }

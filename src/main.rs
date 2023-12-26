@@ -29,11 +29,13 @@ fn main() {
         }
     };
 
+    let path = env::current_dir().unwrap().to_str().unwrap().to_owned();
+
     let mut program = Program::new();
     parser::parse(Lexer::new(source.chars()), &mut program);
     program.print();
     let bundle = program.bundle();
-    executor::execute_program(&bundle)
+    executor::execute_program(bundle, vec![path])
         .unwrap_or_else(|e| {
             eprintln!("Error executing script: {:?}", e);
             process::exit(1);

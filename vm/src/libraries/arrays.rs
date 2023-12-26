@@ -1,10 +1,9 @@
-use std::{collections::HashMap, rc::Rc};
 use gc::Gc;
-use crate::{types::{Value, VMError, Variables}, executor};
+use crate::{types::{VMError, Variables, Value, Context}, executor};
 
-pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
-    libs.insert("arrays".into(), Value::new_lib_obj(|obj| {
-        obj.insert("push".into(), Value::NativeFunction(|_, _, mut args| {
+pub fn load_libs(ctx: &mut Context) {
+    ctx.add_lib("arrays".into(), Value::new_lib_obj(|obj| {
+        obj.insert("push".into(), Value::NativeFunction(|_, mut args| {
             if args.len() < 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -12,14 +11,14 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             args[0].as_arr()?.borrow_mut().get_mut()?.append(&mut elements);
             Ok(Value::Null)
         }));
-        obj.insert("pop".into(), Value::NativeFunction(|_, _, args| {
+        obj.insert("pop".into(), Value::NativeFunction(|_, args| {
             if args.len() != 1 {
                 return Err(VMError::IllegalFunctionArguments);
             }
             args[0].as_arr()?.borrow_mut().get_mut()?.pop()
                 .ok_or_else(|| VMError::ArrayIndexOutOfBound)
         }));
-        obj.insert("splice".into(), Value::NativeFunction(|_, _, mut args| {
+        obj.insert("splice".into(), Value::NativeFunction(|_, mut args| {
             if args.len() < 3 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -34,7 +33,7 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             }
             Ok(Value::new_arr(arr.get_mut()?.splice(start .. end, elements).collect()))
         }));
-        obj.insert("slice".into(), Value::NativeFunction(|_, _, args| {
+        obj.insert("slice".into(), Value::NativeFunction(|_, args| {
             if args.len() < 2 || args.len() > 3 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -49,7 +48,7 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             }
             Ok(Value::new_arr(arr.get()[start .. end].to_owned()))
         }));
-        obj.insert("for_each".into(), Value::NativeFunction(|program, libs, args| {
+        obj.insert("for_each".into(), Value::NativeFunction(|ctx, args| {
             if args.len() != 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -57,7 +56,8 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             let closure = args[1].as_closure()?;
             for (idx, elem) in arr.into_iter().enumerate() {
                 executor::execute_closure(
-                    program, libs,
+                    ctx,
+                    closure.program_idx,
                     closure.func_idx,
                     Gc::new(Variables::new(Some(&closure.parent))),
                     vec![elem, Value::Int(idx as i64)]
@@ -65,7 +65,7 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             }
             Ok(Value::Null)
         }));
-        obj.insert("filter".into(), Value::NativeFunction(|program, libs, args| {
+        obj.insert("filter".into(), Value::NativeFunction(|ctx, args| {
             if args.len() != 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -74,7 +74,8 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             let mut filtered = Vec::with_capacity(arr.len());
             for (idx, elem) in arr.into_iter().enumerate() {
                 let res = executor::execute_closure(
-                    program, libs,
+                    ctx,
+                    closure.program_idx,
                     closure.func_idx,
                     Gc::new(Variables::new(Some(&closure.parent))),
                     vec![elem.clone(), Value::Int(idx as i64)]
@@ -86,7 +87,7 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             filtered.shrink_to_fit();
             Ok(Value::new_arr(filtered))
         }));
-        obj.insert("map".into(), Value::NativeFunction(|program, libs, args| {
+        obj.insert("map".into(), Value::NativeFunction(|ctx, args| {
             if args.len() != 2 {
                 return Err(VMError::IllegalFunctionArguments);
             }
@@ -95,7 +96,8 @@ pub fn load_libs(libs: &mut HashMap<Rc<str>, Value>) {
             let mut mapped = Vec::with_capacity(arr.len());
             for (idx, elem) in arr.into_iter().enumerate() {
                 let res = executor::execute_closure(
-                    program, libs,
+                    ctx,
+                    closure.program_idx,
                     closure.func_idx,
                     Gc::new(Variables::new(Some(&closure.parent))),
                     vec![elem, Value::Int(idx as i64)]
