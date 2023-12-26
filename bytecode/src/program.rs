@@ -15,35 +15,40 @@ pub enum Constant {
     String(String)
 }
 
+#[derive(Default)]
 struct ConstantPool {
     constant_list: Vec<Constant>,
+    int_map: HashMap<i64, usize>,
+    float_map: HashMap<u64, usize>,
     str_map: HashMap<String, usize>
 }
 
 impl ConstantPool {
-    fn new() -> Self {
-        Self {
-            constant_list: vec![],
-            str_map: HashMap::new()
-        }
-    }
-
     fn int(&mut self, i: i64) -> usize {
+        if let Some(&idx) = self.int_map.get(&i) {
+            return idx;
+        }
         let idx = self.constant_list.len();
         self.constant_list.push(Constant::Int(i));
+        self.int_map.insert(i, idx);
         idx
     }
 
     fn float(&mut self, f: f64) -> usize {
+        let bits = f.to_bits();
+        if let Some(&idx) = self.float_map.get(&bits) {
+            return idx;
+        }
         let idx = self.constant_list.len();
         self.constant_list.push(Constant::Float(f));
+        self.float_map.insert(bits, idx);
         idx
     }
 
     fn str(&mut self, s: &str) -> usize {
         // string exists
-        if let Some(&v) = self.str_map.get(s) {
-            return v
+        if let Some(&idx) = self.str_map.get(s) {
+            return idx;
         }
         // string does not exist, create
         let idx = self.constant_list.len();
@@ -100,7 +105,7 @@ impl Program {
 
     pub fn new() -> Self {
         Self {
-            constant_pool: ConstantPool::new(),
+            constant_pool: Default::default(),
             func_list: vec![Func::new()],
             idx: vec![0]
         }
