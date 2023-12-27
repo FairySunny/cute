@@ -313,8 +313,7 @@ impl Value {
 pub struct Context {
     programs: Vec<(ProgramBundle, Option<PathBuf>)>,
     libs: HashMap<Rc<str>, Value>,
-    file_libs: HashMap<PathBuf, Value>,
-    paths: Vec<PathBuf>
+    file_libs: HashMap<PathBuf, Value>
 }
 
 impl Context {
@@ -329,8 +328,7 @@ impl Context {
         let mut ctx = Self {
             programs: vec![(program, path)],
             libs: HashMap::new(),
-            file_libs: HashMap::new(),
-            paths
+            file_libs: HashMap::new()
         };
 
         libraries::misc::load_libs(&mut ctx);
@@ -375,17 +373,6 @@ impl Context {
 
     pub fn get_file_lib(&self, path: &Path) -> Option<&Value> {
         self.file_libs.get(path)
-    }
-
-    pub fn find_path(&self, name: &str) -> Option<PathBuf> {
-        self.paths.iter().find_map(|p| {
-            let file_path = p.join(name.to_owned() + ".cute");
-            if file_path.is_file() {
-                Some(file_path)
-            } else {
-                None
-            }
-        })
     }
 }
 
