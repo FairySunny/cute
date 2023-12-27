@@ -318,13 +318,6 @@ pub struct Context {
 
 impl Context {
     pub fn new(program: ProgramBundle, path: Option<PathBuf>) -> Self {
-        let paths = path.as_ref()
-            .and_then(|p| p.parent())
-            .map_or_else(|| vec![], |p| vec![p.to_owned()]);
-        eprintln!("Paths: {:?}", paths);
-        eprintln!();
-        eprintln!();
-
         let mut ctx = Self {
             programs: vec![(program, path)],
             libs: HashMap::new(),
