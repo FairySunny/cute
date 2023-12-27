@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, path::PathBuf};
 use gc::Gc;
 use bytecode::{program::{ProgramBundle, Constant}, code};
 use crate::types::{VMError, Variables, Closure, Value, Context};
@@ -37,7 +37,7 @@ fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
     stack.pop().ok_or_else(|| VMError::BadStack)
 }
 
-pub fn execute_closure(
+fn execute_closure(
     ctx: &mut Context,
     program_idx: usize,
     func_idx: usize,
@@ -418,7 +418,7 @@ pub fn execute_closure(
 
 pub fn call(
     ctx: &mut Context,
-    closure: & Closure,
+    closure: &Closure,
     args: Vec<Value>) -> Result<Value, VMError> {
     execute_closure(
         ctx,
@@ -429,7 +429,7 @@ pub fn call(
     )
 }
 
-pub fn execute_program(program: ProgramBundle, paths: Vec<String>) -> Result<(), VMError> {
+pub fn execute_program(program: ProgramBundle, paths: Vec<PathBuf>) -> Result<(), VMError> {
     let mut ctx = Context::new(program, paths);
 
     execute_closure(&mut ctx, 0, 0, Variables::new_gc(None), vec![])?;

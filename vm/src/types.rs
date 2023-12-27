@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::{Path, PathBuf}};
+use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::PathBuf};
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::program::ProgramBundle;
 use crate::libraries;
@@ -311,11 +311,11 @@ impl Value {
 pub struct Context {
     programs: Vec<ProgramBundle>,
     libs: HashMap<Rc<str>, Value>,
-    paths: Vec<String>
+    paths: Vec<PathBuf>
 }
 
 impl Context {
-    pub fn new(program: ProgramBundle, paths: Vec<String>) -> Self {
+    pub fn new(program: ProgramBundle, paths: Vec<PathBuf>) -> Self {
         let mut ctx = Self {
             programs: vec![program],
             libs: HashMap::new(),
@@ -349,7 +349,7 @@ impl Context {
 
     pub fn find_path(&self, name: &str) -> Option<PathBuf> {
         self.paths.iter().find_map(|p| {
-            let file_path = Path::new(p).join(name.to_owned() + ".cute");
+            let file_path = p.join(name.to_owned() + ".cute");
             if file_path.is_file() {
                 Some(file_path)
             } else {

@@ -2,7 +2,3 @@ add = @{
     > x; > y;
     < x + y;
 };
-
-x = @types.string_to_float(>> x);
-y = @types.string_to_float(>> y);
-<< add(x, y);
