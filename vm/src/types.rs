@@ -14,7 +14,6 @@ pub enum VMError {
     InvalidType { expected: String, got: String },
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
-    UnknownLibrary(String),
     ObjectLocked,
     IllegalFunctionArguments,
     IllegalState,
