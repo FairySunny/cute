@@ -1,7 +1,6 @@
-use std::{rc::Rc, path::PathBuf};
-use gc::Gc;
+use std::{rc::Rc, path::{PathBuf, Path}};
 use bytecode::{program::{ProgramBundle, Constant}, code};
-use crate::types::{VMError, Variables, Closure, Value, Context};
+use crate::types::{VMError, Variables, Closure, Value, Context, ProgramState};
 
 fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     let code = *func.get(*pc)
@@ -39,24 +38,22 @@ fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
 
 fn execute_closure(
     ctx: &mut Context,
-    program_idx: usize,
-    func_idx: usize,
-    variables: Gc<Variables>,
+    state: ProgramState,
     args: Vec<Value>
 ) -> Result<Value, VMError> {
-    if func_idx >= ctx.get_program(program_idx).func_list.len() {
+    if state.func_idx >= ctx.get_program(state.program_idx).func_list.len() {
         return Err(VMError::FunctionIndexOutOfBound);
     }
 
-    let this = variables.this_obj();
+    let this = state.variables.this_obj();
 
     let mut stack = vec![];
 
     let mut pc = 0usize;
 
     loop {
-        let program = ctx.get_program(program_idx);
-        let cur_func = &program.func_list[func_idx];
+        let program = ctx.get_program(state.program_idx);
+        let cur_func = &program.func_list[state.func_idx];
 
         let code = next(&cur_func, &mut pc)?;
 
@@ -70,7 +67,7 @@ fn execute_closure(
             }
             code::LOAD_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match variables.parent_obj()?.borrow().get().get(str) {
+                match state.variables.parent_obj()?.borrow().get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
@@ -116,8 +113,8 @@ fn execute_closure(
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let value = stack_pop(&mut stack)?;
                 match &value {
-                    Value::Null => variables.parent_obj()?.borrow_mut().get_mut()?.remove(str),
-                    _ => variables.parent_obj()?.borrow_mut().get_mut()?
+                    Value::Null => state.variables.parent_obj()?.borrow_mut().get_mut()?.remove(str),
+                    _ => state.variables.parent_obj()?.borrow_mut().get_mut()?
                         .insert(str.clone(), value)
                 };
             }
@@ -193,10 +190,10 @@ fn execute_closure(
                 let arg_idx: usize = next(&cur_func, &mut pc)?.into();
                 stack.push(args.get(arg_idx).unwrap_or(&Value::Null).clone());
             }
-            code::PUSH_SELF => stack.push(variables.this().clone()),
+            code::PUSH_SELF => stack.push(state.variables.this().clone()),
             code::PUSH_SUPER => {
                 let lvl: u32 = next(&cur_func, &mut pc)?.into();
-                let mut vars = Box::new(&variables);
+                let mut vars = Box::new(&state.variables);
                 for _ in 0 .. lvl + 1 {
                     vars = Box::new(vars.parent()?);
                 }
@@ -205,8 +202,8 @@ fn execute_closure(
             code::PUSH_CLOSURE => {
                 let idx: usize = next(&cur_func, &mut pc)?.into();
                 stack.push(Value::Closure(Closure {
-                    parent: variables.clone(),
-                    program_idx,
+                    parent: state.variables.clone(),
+                    program_idx: state.program_idx,
                     func_idx: idx
                 }));
             }
@@ -244,7 +241,7 @@ fn execute_closure(
                         call(ctx, closure, args)?
                     ),
                     Value::NativeFunction(func) => stack.push(
-                        func(ctx, args)?
+                        func(ctx, &state, args)?
                     ),
                     v => return Err(
                         VMError::invalid_type("closure/native function", v.type_to_str())
@@ -395,12 +392,8 @@ fn execute_closure(
                     None => {
                         let lib_path = ctx.find_path(str)
                             .ok_or_else(|| VMError::UnknownLibrary(str.to_string()))?;
-                        let lib_prog = compiler::compile_file(lib_path)?;
                         let lib_name = str.clone();
-                        let lib_prog_idx = ctx.add_program(lib_prog);
-                        let lib = execute_closure(
-                            ctx, lib_prog_idx, 0, Variables::new_gc(None), vec![]
-                        )?;
+                        let lib = execute_file(ctx, &lib_path)?;
                         ctx.add_lib(lib_name, lib.clone());
                         lib
                     }
@@ -419,20 +412,46 @@ fn execute_closure(
 pub fn call(
     ctx: &mut Context,
     closure: &Closure,
-    args: Vec<Value>) -> Result<Value, VMError> {
+    args: Vec<Value>
+) -> Result<Value, VMError> {
     execute_closure(
         ctx,
-        closure.program_idx,
-        closure.func_idx,
-        Variables::new_gc(Some(&closure.parent)),
+        ProgramState {
+            program_idx: closure.program_idx,
+            func_idx: closure.func_idx,
+            variables: Variables::new_gc(Some(&closure.parent))
+        },
         args
     )
 }
 
-pub fn execute_program(program: ProgramBundle, paths: Vec<PathBuf>) -> Result<(), VMError> {
-    let mut ctx = Context::new(program, paths);
+pub fn execute_file(
+    ctx: &mut Context,
+    path: &Path
+) -> Result<Value, VMError> {
+    let program = compiler::compile_file(path)?;
+    let program_idx = ctx.add_program(program, Some(path.to_owned()));
+    execute_closure(
+        ctx,
+        ProgramState {
+            program_idx,
+            func_idx: 0,
+            variables: Variables::new_gc(None)
+        },
+        vec![]
+    )
+}
 
-    execute_closure(&mut ctx, 0, 0, Variables::new_gc(None), vec![])?;
-
+pub fn execute_program(program: ProgramBundle, path: Option<PathBuf>) -> Result<(), VMError> {
+    let mut ctx = Context::new(program, path);
+    execute_closure(
+        &mut ctx,
+        ProgramState {
+            program_idx: 0,
+            func_idx: 0,
+            variables: Variables::new_gc(None)
+        },
+        vec![]
+    )?;
     Ok(())
 }

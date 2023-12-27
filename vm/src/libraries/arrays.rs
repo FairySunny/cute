@@ -4,20 +4,20 @@ use crate::{types::{VMError, Value, Context}, executor};
 pub fn load_libs(ctx: &mut Context) {
     let mut lib = HashMap::new();
 
-    lib.insert("push".into(), Value::NativeFunction(|_, mut args| {
+    lib.insert("push".into(), Value::NativeFunction(|_, _, mut args| {
         Value::check_arg_range(&args, 2..)?;
         let mut elements = args.drain(1..).collect();
         args[0].as_arr()?.borrow_mut().get_mut()?.append(&mut elements);
         Ok(Value::Null)
     }));
 
-    lib.insert("pop".into(), Value::NativeFunction(|_, args| {
+    lib.insert("pop".into(), Value::NativeFunction(|_, _, args| {
         Value::check_arg_cnt(&args, 1)?;
         args[0].as_arr()?.borrow_mut().get_mut()?.pop()
             .ok_or_else(|| VMError::ArrayIndexOutOfBound)
     }));
 
-    lib.insert("splice".into(), Value::NativeFunction(|_, mut args| {
+    lib.insert("splice".into(), Value::NativeFunction(|_, _, mut args| {
         Value::check_arg_range(&args, 3..)?;
         let start = args[1].as_idx()?;
         let del_cnt = args[2].as_idx()?;
@@ -31,7 +31,7 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::new_arr(arr.get_mut()?.splice(start .. end, elements).collect()))
     }));
 
-    lib.insert("slice".into(), Value::NativeFunction(|_, args| {
+    lib.insert("slice".into(), Value::NativeFunction(|_, _, args| {
         Value::check_arg_range(&args, 2..4)?;
         let arr = args[0].as_arr()?.borrow();
         let start = args[1].as_idx()?;
@@ -45,7 +45,7 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::new_arr(arr.get()[start .. end].to_owned()))
     }));
 
-    lib.insert("find_first_index".into(), Value::NativeFunction(|ctx, args| {
+    lib.insert("find_first_index".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;
@@ -62,7 +62,7 @@ pub fn load_libs(ctx: &mut Context) {
         return Ok(Value::Int(-1));
     }));
 
-    lib.insert("find_last_index".into(), Value::NativeFunction(|ctx, args| {
+    lib.insert("find_last_index".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;
@@ -79,7 +79,7 @@ pub fn load_libs(ctx: &mut Context) {
         return Ok(Value::Int(-1));
     }));
 
-    lib.insert("for_each".into(), Value::NativeFunction(|ctx, args| {
+    lib.insert("for_each".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;
@@ -93,7 +93,7 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::Null)
     }));
 
-    lib.insert("filter".into(), Value::NativeFunction(|ctx, args| {
+    lib.insert("filter".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;
@@ -112,7 +112,7 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::new_arr(filtered))
     }));
 
-    lib.insert("map".into(), Value::NativeFunction(|ctx, args| {
+    lib.insert("map".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
         let arr = args[0].as_arr()?.borrow().get().clone();
         let closure = args[1].as_closure()?;

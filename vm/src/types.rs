@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::PathBuf};
+use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::{PathBuf, Path}};
 use gc::{Trace, Finalize, Gc, GcCell};
 use bytecode::program::ProgramBundle;
 use crate::libraries;
@@ -17,7 +17,9 @@ pub enum VMError {
     UnknownLibrary(String),
     ObjectLocked,
     IllegalFunctionArguments,
-    IOError(io::Error)
+    IllegalState,
+    IOError(io::Error),
+    Exit(i64)
 }
 
 impl VMError {
@@ -125,7 +127,7 @@ pub enum Value {
     Closure(Closure),
     NativeFunction(
         #[unsafe_ignore_trace]
-        fn(&mut Context, Vec<Value>) -> Result<Value, VMError>
+        fn(&mut Context, &ProgramState, Vec<Value>) -> Result<Value, VMError>
     )
 }
 
@@ -309,34 +311,53 @@ impl Value {
 }
 
 pub struct Context {
-    programs: Vec<ProgramBundle>,
+    programs: Vec<(ProgramBundle, Option<PathBuf>)>,
     libs: HashMap<Rc<str>, Value>,
+    file_libs: HashMap<PathBuf, Value>,
     paths: Vec<PathBuf>
 }
 
 impl Context {
-    pub fn new(program: ProgramBundle, paths: Vec<PathBuf>) -> Self {
+    pub fn new(program: ProgramBundle, path: Option<PathBuf>) -> Self {
+        let paths = path.as_ref()
+            .and_then(|p| p.parent())
+            .map_or_else(|| vec![], |p| vec![p.to_owned()]);
+        eprintln!("Paths: {:?}", paths);
+        eprintln!();
+        eprintln!();
+
         let mut ctx = Self {
-            programs: vec![program],
+            programs: vec![(program, path)],
             libs: HashMap::new(),
+            file_libs: HashMap::new(),
             paths
         };
 
         libraries::misc::load_libs(&mut ctx);
         libraries::types::load_libs(&mut ctx);
         libraries::arrays::load_libs(&mut ctx);
+        libraries::sys::load_libs(&mut ctx);
 
         ctx
     }
 
-    pub fn add_program(&mut self, program: ProgramBundle) -> usize {
+    pub fn add_program(&mut self, program: ProgramBundle, path: Option<PathBuf>) -> usize {
+        eprintln!("Program: {:?}", path);
         let idx = self.programs.len();
-        self.programs.push(program);
+        self.programs.push((program, path));
         idx
     }
 
     pub fn get_program(&self, idx: usize) -> &ProgramBundle {
-        &self.programs[idx]
+        &self.programs[idx].0
+    }
+
+    pub fn get_program_path(&self, idx: usize) -> Option<&Path> {
+        self.programs[idx].1.as_ref().map(|p| p.as_path())
+    }
+
+    pub fn get_program_dir(&self, idx: usize) -> Option<&Path> {
+        self.get_program_path(idx).and_then(|p| p.parent())
     }
 
     pub fn add_lib(&mut self, name: Rc<str>, lib: Value) {
@@ -345,6 +366,15 @@ impl Context {
 
     pub fn get_lib(&self, name: &str) -> Option<&Value> {
         self.libs.get(name)
+    }
+
+    pub fn add_file_lib(&mut self, path: PathBuf, lib: Value) {
+        eprintln!("Import: {:?}", path);
+        self.file_libs.insert(path, lib);
+    }
+
+    pub fn get_file_lib(&self, path: &Path) -> Option<&Value> {
+        self.file_libs.get(path)
     }
 
     pub fn find_path(&self, name: &str) -> Option<PathBuf> {
@@ -357,4 +387,10 @@ impl Context {
             }
         })
     }
+}
+
+pub struct ProgramState {
+    pub program_idx: usize,
+    pub func_idx: usize,
+    pub variables: Gc<Variables>
 }
