@@ -190,7 +190,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                     self.program.switch_back();
                     None
                 }
-                Token::Name(name) => {
+                Token::Name(name) | Token::String(name) => {
                     self.program.byte(code::LOAD_LIB);
                     self.program.str(&name)?;
                     None

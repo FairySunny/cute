@@ -1,6 +1,6 @@
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
-use crate::{types::{VMError, Value, Context}, executor};
+use crate::types::{VMError, Value, Context};
 
 pub fn load_libs(ctx: &mut Context) {
     let mut lib = HashMap::new();
@@ -9,27 +9,6 @@ pub fn load_libs(ctx: &mut Context) {
         Value::check_arg_cnt(&args, 1)?;
         let code = args[0].as_int()?;
         Err(VMError::Exit(code))
-    }));
-
-    lib.insert("import".into(), Value::NativeFunction(|ctx, state, args| {
-        Value::check_arg_cnt(&args, 1)?;
-        let lib_path = Path::new(args[0].as_str()?.as_ref());
-        let lib_path = if lib_path.is_absolute() {
-            lib_path.canonicalize()?
-        } else {
-            ctx.get_program_dir(state.program_idx)
-                .ok_or_else(|| VMError::IllegalState)?
-                .join(lib_path)
-                .canonicalize()?
-        };
-        Ok(match ctx.get_file_lib(&lib_path) {
-            Some(lib) => lib.clone(),
-            None => {
-                let lib = executor::execute_file(ctx, &lib_path)?;
-                ctx.add_file_lib(lib_path, lib.clone());
-                lib
-            }
-        })
     }));
 
     lib.insert("as_lib".into(), Value::NativeFunction(|ctx, _, args| {

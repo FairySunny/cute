@@ -387,17 +387,7 @@ fn execute_closure(
             code::OUT => println!("{}", stack_pop(&mut stack)?.to_string()),
             code::LOAD_LIB => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                let value = match ctx.get_lib(str) {
-                    Some(v) => v.clone(),
-                    None => {
-                        let lib_path = ctx.find_path(str)
-                            .ok_or_else(|| VMError::UnknownLibrary(str.to_string()))?;
-                        let lib_name = str.clone();
-                        let lib = execute_file(ctx, &lib_path)?;
-                        ctx.add_lib(lib_name, lib.clone());
-                        lib
-                    }
-                };
+                let value = load_library(ctx, &state, str.clone())?;
                 stack.push(value);
             }
             _ => return Err(VMError::UnknownInstruction(code))
@@ -440,6 +430,34 @@ pub fn execute_file(
         },
         vec![]
     )
+}
+
+pub fn load_library(
+    ctx: &mut Context,
+    state: &ProgramState,
+    name: Rc<str>
+) -> Result<Value, VMError> {
+    Ok(match ctx.get_lib(&name) {
+        Some(lib) => lib.clone(),
+        None => {
+            let lib_path = PathBuf::from(name.to_string() + ".cute");
+            let lib_path = if lib_path.is_absolute() {
+                lib_path
+            } else {
+                ctx.get_program_dir(state.program_idx)
+                    .ok_or_else(|| VMError::IllegalState)?
+                    .join(lib_path)
+            }.canonicalize()?;
+            match ctx.get_file_lib(&lib_path) {
+                Some(lib) => lib.clone(),
+                None => {
+                    let lib = execute_file(ctx, &lib_path)?;
+                    ctx.add_file_lib(lib_path, lib.clone());
+                    lib
+                }
+            }
+        }
+    })
 }
 
 pub fn execute_program(program: ProgramBundle, path: Option<PathBuf>) -> Result<(), VMError> {
