@@ -91,7 +91,7 @@ impl Variables {
     }
 
     pub fn parent(&self) -> Result<&Gc<Variables>, VMError> {
-        self.parent.as_ref().ok_or_else(|| VMError::SuperDoesNotExist)
+        self.parent.as_ref().ok_or(VMError::SuperDoesNotExist)
     }
 
     pub fn parent_obj(&self) -> Result<&ObjectRef, VMError> {

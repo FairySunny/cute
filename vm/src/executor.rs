@@ -4,9 +4,9 @@ use crate::types::{VMError, Variables, Closure, Value, Context, ProgramState};
 
 fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     let code = *func.get(*pc)
-        .ok_or_else(|| VMError::PCIndexOutOfBound)?;
+        .ok_or(VMError::PCIndexOutOfBound)?;
     *pc = pc.checked_add(1)
-        .ok_or_else(|| VMError::PCIndexOutOfBound)?;
+        .ok_or(VMError::PCIndexOutOfBound)?;
     Ok(code)
 }
 
@@ -21,19 +21,19 @@ fn next_str<'a>(func: &Vec<u8>, pc: &mut usize, program: &'a ProgramBundle) -> R
 
 fn get_constant(program: &ProgramBundle, idx: usize) -> Result<&Constant, VMError> {
     program.constant_pool.get(idx)
-        .ok_or_else(|| VMError::ConstantIndexOutOfBound)
+        .ok_or(VMError::ConstantIndexOutOfBound)
 }
 
 fn stack_top(stack: &Vec<Value>) -> Result<&Value, VMError> {
-    stack.last().ok_or_else(|| VMError::BadStack)
+    stack.last().ok_or(VMError::BadStack)
 }
 
 fn stack_top_mut(stack: &mut Vec<Value>) -> Result<&mut Value, VMError> {
-    stack.last_mut().ok_or_else(|| VMError::BadStack)
+    stack.last_mut().ok_or(VMError::BadStack)
 }
 
 fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
-    stack.pop().ok_or_else(|| VMError::BadStack)
+    stack.pop().ok_or(VMError::BadStack)
 }
 
 fn execute_closure(
@@ -94,7 +94,7 @@ fn execute_closure(
                     Value::Array(a) => {
                         let idx = idx.as_idx()?;
                         stack.push(a.get().get(idx)
-                            .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
+                            .ok_or(VMError::ArrayIndexOutOfBound)?
                             .clone());
                     }
                     _ => return Err(VMError::invalid_type("object/array", &obj))
@@ -140,7 +140,7 @@ fn execute_closure(
                     Value::Array(a) => {
                         let idx = idx.as_idx()?;
                         *a.get_mut()?.get_mut(idx)
-                            .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
+                            .ok_or(VMError::ArrayIndexOutOfBound)? = value.clone();
                     }
                     _ => return Err(VMError::invalid_type("object/array", &obj))
                 }
@@ -441,7 +441,7 @@ pub fn load_library(
                 lib_path
             } else {
                 ctx.get_program_dir(state.program_idx)
-                    .ok_or_else(|| VMError::IllegalState)?
+                    .ok_or(VMError::IllegalState)?
                     .join(lib_path)
             }.canonicalize()?.into();
             match ctx.get_file_lib(&lib_path) {

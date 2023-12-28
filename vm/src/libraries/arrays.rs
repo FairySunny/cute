@@ -13,7 +13,7 @@ pub fn load_libs(ctx: &mut Context) {
     lib.insert("pop".into(), Value::NativeFunction(|_, _, args| {
         let [arr] = Value::extract_args(args)?;
         let mut arr = arr.as_arr()?.get_mut()?;
-        arr.pop().ok_or_else(|| VMError::ArrayIndexOutOfBound)
+        arr.pop().ok_or(VMError::ArrayIndexOutOfBound)
     }));
 
     lib.insert("splice".into(), Value::NativeFunction(|_, _, args| {
@@ -21,7 +21,7 @@ pub fn load_libs(ctx: &mut Context) {
         let start = start.as_idx()?;
         let del_cnt = del_cnt.as_idx()?;
         let end = start.checked_add(del_cnt)
-            .ok_or_else(|| VMError::ArrayIndexOutOfBound)?;
+            .ok_or(VMError::ArrayIndexOutOfBound)?;
         let mut arr = arr.as_arr()?.get_mut()?;
         if end > arr.len() {
             return Err(VMError::ArrayIndexOutOfBound);
