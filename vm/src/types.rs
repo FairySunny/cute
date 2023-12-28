@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::{PathBuf, Path}};
+use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::Path};
 use gc::{Trace, Finalize, Gc, GcCell, GcCellRef, GcCellRefMut};
 use bytecode::program::ProgramBundle;
 use crate::libraries;
@@ -306,13 +306,13 @@ impl Value {
 }
 
 pub struct Context {
-    programs: Vec<(ProgramBundle, Option<PathBuf>)>,
+    programs: Vec<(ProgramBundle, Option<Rc<Path>>)>,
     libs: HashMap<Rc<str>, Value>,
-    file_libs: HashMap<PathBuf, Value>
+    file_libs: HashMap<Rc<Path>, Value>
 }
 
 impl Context {
-    pub fn new(program: ProgramBundle, path: Option<PathBuf>) -> Self {
+    pub fn new(program: ProgramBundle, path: Option<Rc<Path>>) -> Self {
         let mut ctx = Self {
             programs: vec![(program, path)],
             libs: HashMap::new(),
@@ -327,7 +327,7 @@ impl Context {
         ctx
     }
 
-    pub fn add_program(&mut self, program: ProgramBundle, path: Option<PathBuf>) -> usize {
+    pub fn add_program(&mut self, program: ProgramBundle, path: Option<Rc<Path>>) -> usize {
         eprintln!("Program: {:?}", path);
         let idx = self.programs.len();
         self.programs.push((program, path));
@@ -339,7 +339,7 @@ impl Context {
     }
 
     pub fn get_program_path(&self, idx: usize) -> Option<&Path> {
-        self.programs[idx].1.as_ref().map(|p| p.as_path())
+        self.programs[idx].1.as_ref().map(|p| p.as_ref())
     }
 
     pub fn get_program_dir(&self, idx: usize) -> Option<&Path> {
@@ -354,7 +354,7 @@ impl Context {
         self.libs.get(name)
     }
 
-    pub fn add_file_lib(&mut self, path: PathBuf, lib: Value) {
+    pub fn add_file_lib(&mut self, path: Rc<Path>, lib: Value) {
         eprintln!("Import: {:?}", path);
         self.file_libs.insert(path, lib);
     }

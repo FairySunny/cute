@@ -1,4 +1,4 @@
-use std::{rc::Rc, path::{PathBuf, Path}};
+use std::{rc::Rc, path::{Path, PathBuf}};
 use bytecode::{program::{ProgramBundle, Constant}, code};
 use crate::types::{VMError, Variables, Closure, Value, Context, ProgramState};
 
@@ -383,7 +383,7 @@ fn execute_closure(
             code::OUT => println!("{}", stack_pop(&mut stack)?.to_string()),
             code::LOAD_LIB => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                let value = load_library(ctx, &state, str.clone())?;
+                let value = load_library(ctx, &state, &str.clone())?;
                 stack.push(value);
             }
             _ => return Err(VMError::UnknownInstruction(code))
@@ -413,10 +413,10 @@ pub fn call(
 
 pub fn execute_file(
     ctx: &mut Context,
-    path: &Path
+    path: Rc<Path>
 ) -> Result<Value, VMError> {
-    let program = compiler::compile_file(path)?;
-    let program_idx = ctx.add_program(program, Some(path.to_owned()));
+    let program = compiler::compile_file(&path)?;
+    let program_idx = ctx.add_program(program, Some(path));
     execute_closure(
         ctx,
         ProgramState {
@@ -431,23 +431,23 @@ pub fn execute_file(
 pub fn load_library(
     ctx: &mut Context,
     state: &ProgramState,
-    name: Rc<str>
+    name: &str
 ) -> Result<Value, VMError> {
-    Ok(match ctx.get_lib(&name) {
+    Ok(match ctx.get_lib(name) {
         Some(lib) => lib.clone(),
         None => {
-            let lib_path = PathBuf::from(name.to_string() + ".cute");
-            let lib_path = if lib_path.is_absolute() {
+            let lib_path = PathBuf::from(name.to_owned() + ".cute");
+            let lib_path: Rc<Path> = if lib_path.is_absolute() {
                 lib_path
             } else {
                 ctx.get_program_dir(state.program_idx)
                     .ok_or_else(|| VMError::IllegalState)?
                     .join(lib_path)
-            }.canonicalize()?;
+            }.canonicalize()?.into();
             match ctx.get_file_lib(&lib_path) {
                 Some(lib) => lib.clone(),
                 None => {
-                    let lib = execute_file(ctx, &lib_path)?;
+                    let lib = execute_file(ctx, lib_path.clone())?;
                     ctx.add_file_lib(lib_path, lib.clone());
                     lib
                 }
@@ -456,7 +456,7 @@ pub fn load_library(
     })
 }
 
-pub fn execute_program(program: ProgramBundle, path: Option<PathBuf>) -> Result<(), VMError> {
+pub fn execute_program(program: ProgramBundle, path: Option<Rc<Path>>) -> Result<(), VMError> {
     let mut ctx = Context::new(program, path);
     execute_closure(
         &mut ctx,

@@ -21,7 +21,7 @@ fn main() -> ExitCode {
                     eprintln!("Error reading from file: {e}");
                     process::exit(1);
                 }),
-            Some(fs::canonicalize(&args[1]).unwrap().to_owned())
+            Some(fs::canonicalize(&args[1]).unwrap().into())
         ),
         _ => {
             eprintln!("Usage: {} [file]", args[0]);
