@@ -57,7 +57,7 @@ pub fn load_libs(ctx: &mut Context) {
                 return Ok(Value::Int(idx as i64));
             }
         }
-        return Ok(Value::Int(-1));
+        Ok(Value::Int(-1))
     }));
 
     lib.insert("find_last_index".into(), Value::NativeFunction(|ctx, _, args| {
@@ -74,7 +74,7 @@ pub fn load_libs(ctx: &mut Context) {
                 return Ok(Value::Int(idx as i64));
             }
         }
-        return Ok(Value::Int(-1));
+        Ok(Value::Int(-1))
     }));
 
     lib.insert("for_each".into(), Value::NativeFunction(|ctx, _, args| {

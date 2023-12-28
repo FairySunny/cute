@@ -97,6 +97,14 @@ impl Variables {
     pub fn parent_obj(&self) -> Result<&ObjectRef, VMError> {
         Ok(self.parent()?.this_obj())
     }
+
+    pub fn ancestor(&self, level: u64) -> Result<&Value, VMError> {
+        let mut vars = self;
+        for _ in 0 .. level + 1 {
+            vars = vars.parent()?;
+        }
+        Ok(vars.this())
+    }
 }
 
 #[derive(Clone, Trace, Finalize)]

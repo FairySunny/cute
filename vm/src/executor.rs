@@ -187,12 +187,8 @@ fn execute_closure(
             }
             code::PUSH_SELF => stack.push(state.variables.this().clone()),
             code::PUSH_SUPER => {
-                let lvl: u32 = next(&cur_func, &mut pc)?.into();
-                let mut vars = Box::new(&state.variables);
-                for _ in 0 .. lvl + 1 {
-                    vars = Box::new(vars.parent()?);
-                }
-                stack.push(vars.this().clone());
+                let lvl: u64 = next(&cur_func, &mut pc)?.into();
+                stack.push(state.variables.ancestor(lvl)?.clone());
             }
             code::PUSH_CLOSURE => {
                 let idx: usize = next(&cur_func, &mut pc)?.into();

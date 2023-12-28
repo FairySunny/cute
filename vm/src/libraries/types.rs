@@ -28,10 +28,11 @@ pub fn load_libs(ctx: &mut Context) {
 
     lib.insert("to_string".into(), Value::NativeFunction(|_, _, args| {
         let [value] = Value::extract_args(args)?;
-        Ok(match &value {
+        let str = match &value {
             Value::String(_) => value,
             _ => Value::String(value.to_string().into())
-        })
+        };
+        Ok(str)
     }));
 
     lib.insert("int_to_float".into(), Value::NativeFunction(|_, _, args| {
@@ -46,14 +47,16 @@ pub fn load_libs(ctx: &mut Context) {
 
     lib.insert("string_to_int".into(), Value::NativeFunction(|_, _, args| {
         let [str] = Value::extract_args(args)?;
-        Ok(Value::Int(i64::from_str(str.as_str()?)
-            .map_err(|_| VMError::IllegalFunctionArguments)?))
+        let int = Value::Int(i64::from_str(str.as_str()?)
+            .map_err(|_| VMError::IllegalFunctionArguments)?);
+        Ok(int)
     }));
 
     lib.insert("string_to_float".into(), Value::NativeFunction(|_, _, args| {
         let [str] = Value::extract_args(args)?;
-        Ok(Value::Float(f64::from_str(str.as_str()?)
-            .map_err(|_| VMError::IllegalFunctionArguments)?))
+        let float = Value::Float(f64::from_str(str.as_str()?)
+            .map_err(|_| VMError::IllegalFunctionArguments)?);
+        Ok(float)
     }));
 
     ctx.add_lib("types".into(), Value::new_locked_obj(lib));
