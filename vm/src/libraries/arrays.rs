@@ -4,27 +4,25 @@ use crate::{types::{VMError, Value, Context}, executor};
 pub fn load_libs(ctx: &mut Context) {
     let mut lib = HashMap::new();
 
-    lib.insert("push".into(), Value::NativeFunction(|_, _, mut args| {
-        Value::check_arg_range(&args, 2..)?;
-        let mut elements = args.drain(1..).collect();
-        args[0].as_arr()?.get_mut()?.append(&mut elements);
+    lib.insert("push".into(), Value::NativeFunction(|_, _, args| {
+        let ([arr], elements) = Value::extract_args_and_array(args)?;
+        arr.as_arr()?.get_mut()?.extend(elements);
         Ok(Value::Null)
     }));
 
     lib.insert("pop".into(), Value::NativeFunction(|_, _, args| {
-        Value::check_arg_cnt(&args, 1)?;
-        args[0].as_arr()?.get_mut()?.pop()
-            .ok_or_else(|| VMError::ArrayIndexOutOfBound)
+        let [arr] = Value::extract_args(args)?;
+        let mut arr = arr.as_arr()?.get_mut()?;
+        arr.pop().ok_or_else(|| VMError::ArrayIndexOutOfBound)
     }));
 
-    lib.insert("splice".into(), Value::NativeFunction(|_, _, mut args| {
-        Value::check_arg_range(&args, 3..)?;
-        let start = args[1].as_idx()?;
-        let del_cnt = args[2].as_idx()?;
+    lib.insert("splice".into(), Value::NativeFunction(|_, _, args| {
+        let ([arr, start, del_cnt], elements) = Value::extract_args_and_array(args)?;
+        let start = start.as_idx()?;
+        let del_cnt = del_cnt.as_idx()?;
         let end = start.checked_add(del_cnt)
             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?;
-        let elements: Vec<_> = args.drain(3..).collect();
-        let mut arr = args[0].as_arr()?.get_mut()?;
+        let mut arr = arr.as_arr()?.get_mut()?;
         if end > arr.len() {
             return Err(VMError::ArrayIndexOutOfBound);
         }
@@ -32,10 +30,10 @@ pub fn load_libs(ctx: &mut Context) {
     }));
 
     lib.insert("slice".into(), Value::NativeFunction(|_, _, args| {
-        Value::check_arg_range(&args, 2..4)?;
-        let arr = args[0].as_arr()?.get();
-        let start = args[1].as_idx()?;
-        let end = match args.get(2) {
+        let ([arr, start], [end]) = Value::extract_args_and_optional(args)?;
+        let arr = arr.as_arr()?.get();
+        let start = start.as_idx()?;
+        let end = match &end {
             Some(v) => v.as_idx()?,
             None => arr.len()
         };
@@ -46,13 +44,13 @@ pub fn load_libs(ctx: &mut Context) {
     }));
 
     lib.insert("find_first_index".into(), Value::NativeFunction(|ctx, _, args| {
-        Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.get().clone();
-        let closure = args[1].as_closure()?;
+        let [arr, pred] = Value::extract_args(args)?;
+        let arr = arr.as_arr()?.get().clone();
+        let pred = pred.as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate() {
             let res = executor::call(
                 ctx,
-                closure,
+                pred,
                 vec![elem, Value::Int(idx as i64)]
             )?;
             if res.as_bool()? {
@@ -63,13 +61,13 @@ pub fn load_libs(ctx: &mut Context) {
     }));
 
     lib.insert("find_last_index".into(), Value::NativeFunction(|ctx, _, args| {
-        Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.get().clone();
-        let closure = args[1].as_closure()?;
+        let [arr, pred] = Value::extract_args(args)?;
+        let arr = arr.as_arr()?.get().clone();
+        let pred = pred.as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate().rev() {
             let res = executor::call(
                 ctx,
-                closure,
+                pred,
                 vec![elem, Value::Int(idx as i64)]
             )?;
             if res.as_bool()? {
@@ -80,13 +78,13 @@ pub fn load_libs(ctx: &mut Context) {
     }));
 
     lib.insert("for_each".into(), Value::NativeFunction(|ctx, _, args| {
-        Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.get().clone();
-        let closure = args[1].as_closure()?;
+        let [arr, action] = Value::extract_args(args)?;
+        let arr = arr.as_arr()?.get().clone();
+        let action = action.as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate() {
             executor::call(
                 ctx,
-                closure,
+                action,
                 vec![elem, Value::Int(idx as i64)]
             )?;
         }
@@ -94,14 +92,14 @@ pub fn load_libs(ctx: &mut Context) {
     }));
 
     lib.insert("filter".into(), Value::NativeFunction(|ctx, _, args| {
-        Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.get().clone();
-        let closure = args[1].as_closure()?;
+        let [arr, filter] = Value::extract_args(args)?;
+        let arr = arr.as_arr()?.get().clone();
+        let filter = filter.as_closure()?;
         let mut filtered = Vec::with_capacity(arr.len());
         for (idx, elem) in arr.into_iter().enumerate() {
             let res = executor::call(
                 ctx,
-                closure,
+                filter,
                 vec![elem.clone(), Value::Int(idx as i64)]
             )?;
             if res.as_bool()? {
@@ -113,14 +111,14 @@ pub fn load_libs(ctx: &mut Context) {
     }));
 
     lib.insert("map".into(), Value::NativeFunction(|ctx, _, args| {
-        Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.get().clone();
-        let closure = args[1].as_closure()?;
+        let [arr, mapping] = Value::extract_args(args)?;
+        let arr = arr.as_arr()?.get().clone();
+        let mapping = mapping.as_closure()?;
         let mut mapped = Vec::with_capacity(arr.len());
         for (idx, elem) in arr.into_iter().enumerate() {
             let res = executor::call(
                 ctx,
-                closure,
+                mapping,
                 vec![elem, Value::Int(idx as i64)]
             )?;
             mapped.push(res);

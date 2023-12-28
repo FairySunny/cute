@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::Path};
+use std::{collections::HashMap, rc::Rc, io, path::Path};
 use gc::{Trace, Finalize, Gc, GcCell, GcCellRef, GcCellRefMut};
 use bytecode::program::ProgramBundle;
 use crate::libraries;
@@ -22,10 +22,10 @@ pub enum VMError {
 }
 
 impl VMError {
-    pub fn invalid_type(expected: &str, got: &str) -> Self {
+    pub fn invalid_type(expected: &str, got: &Value) -> Self {
         Self::InvalidType {
             expected: expected.to_owned(),
-            got: got.to_owned()
+            got: got.type_to_str().to_owned()
         }
     }
 }
@@ -86,7 +86,7 @@ impl Variables {
         &self.this
     }
 
-    pub fn this_obj(&self) -> &Gc<Lockable<HashMap<Rc<str>, Value>>> {
+    pub fn this_obj(&self) -> &ObjectRef {
         self.this.as_obj().expect("`Variables.this` is not object")
     }
 
@@ -94,7 +94,7 @@ impl Variables {
         self.parent.as_ref().ok_or_else(|| VMError::SuperDoesNotExist)
     }
 
-    pub fn parent_obj(&self) -> Result<&Gc<Lockable<HashMap<Rc<str>, Value>>>, VMError> {
+    pub fn parent_obj(&self) -> Result<&ObjectRef, VMError> {
         Ok(self.parent()?.this_obj())
     }
 }
@@ -106,6 +106,9 @@ pub struct Closure {
     pub func_idx: usize
 }
 
+type ObjectRef = Gc<Lockable<HashMap<Rc<str>, Value>>>;
+type ArrayRef = Gc<Lockable<Vec<Value>>>;
+
 #[derive(Clone, Trace, Finalize)]
 pub enum Value {
     Null,
@@ -113,8 +116,8 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     String(Rc<str>),
-    Object(Gc<Lockable<HashMap<Rc<str>, Value>>>),
-    Array(Gc<Lockable<Vec<Value>>>),
+    Object(ObjectRef),
+    Array(ArrayRef),
     Closure(Closure),
     NativeFunction(
         #[unsafe_ignore_trace]
@@ -156,14 +159,14 @@ impl Value {
     pub fn as_int(&self) -> Result<i64, VMError> {
         match self {
             Value::Int(i) => Ok(*i),
-            _ => Err(VMError::invalid_type("int", self.type_to_str()))
+            _ => Err(VMError::invalid_type("int", self))
         }
     }
 
     pub fn as_int_mut(&mut self) -> Result<&mut i64, VMError> {
         match self {
             Value::Int(i) => Ok(i),
-            _ => Err(VMError::invalid_type("int", self.type_to_str()))
+            _ => Err(VMError::invalid_type("int", self))
         }
     }
 
@@ -175,42 +178,42 @@ impl Value {
     pub fn as_float(&self) -> Result<f64, VMError> {
         match self {
             Value::Float(f) => Ok(*f),
-            _ => Err(VMError::invalid_type("float", self.type_to_str()))
+            _ => Err(VMError::invalid_type("float", self))
         }
     }
 
     pub fn as_bool(&self) -> Result<bool, VMError> {
         match self {
             Value::Bool(b) => Ok(*b),
-            _ => Err(VMError::invalid_type("bool", self.type_to_str()))
+            _ => Err(VMError::invalid_type("bool", self))
         }
     }
 
     pub fn as_str(&self) -> Result<&Rc<str>, VMError> {
         match self {
             Value::String(s) => Ok(s),
-            _ => Err(VMError::invalid_type("string", self.type_to_str()))
+            _ => Err(VMError::invalid_type("string", self))
         }
     }
 
-    pub fn as_obj(&self) -> Result<&Gc<Lockable<HashMap<Rc<str>, Value>>>, VMError> {
+    pub fn as_obj(&self) -> Result<&ObjectRef, VMError> {
         match self {
             Value::Object(o) => Ok(o),
-            _ => Err(VMError::invalid_type("object", self.type_to_str()))
+            _ => Err(VMError::invalid_type("object", self))
         }
     }
 
-    pub fn as_arr(&self) -> Result<&Gc<Lockable<Vec<Value>>>, VMError> {
+    pub fn as_arr(&self) -> Result<&ArrayRef, VMError> {
         match self {
             Value::Array(a) => Ok(a),
-            _ => Err(VMError::invalid_type("array", self.type_to_str()))
+            _ => Err(VMError::invalid_type("array", self))
         }
     }
 
     pub fn as_closure(&self) -> Result<&Closure, VMError> {
         match self {
             Value::Closure(c) => Ok(c),
-            _ => Err(VMError::invalid_type("closure", self.type_to_str()))
+            _ => Err(VMError::invalid_type("closure", self))
         }
     }
 
@@ -261,7 +264,7 @@ impl Value {
             Value::Int(i) => *i > other.as_int()?,
             Value::Float(f) => *f > other.as_float()?,
             Value::String(s) => s > other.as_str()?,
-            _ => return Err(VMError::invalid_type("int/float/string", self.type_to_str()))
+            _ => return Err(VMError::invalid_type("int/float/string", self))
         })
     }
 
@@ -270,7 +273,7 @@ impl Value {
             Value::Int(i) => *i < other.as_int()?,
             Value::Float(f) => *f < other.as_float()?,
             Value::String(s) => s < other.as_str()?,
-            _ => return Err(VMError::invalid_type("int/float/string", self.type_to_str()))
+            _ => return Err(VMError::invalid_type("int/float/string", self))
         })
     }
 
@@ -288,20 +291,31 @@ impl Value {
         }
     }
 
-    pub fn check_arg_cnt(args: &Vec<Value>, cnt: usize) -> Result<(), VMError> {
-        if cnt == args.len() {
-            Ok(())
-        } else {
-            Err(VMError::IllegalFunctionArguments)
-        }
+    pub fn extract_args<const N: usize>(args: Vec<Value>) -> Result<[Value; N], VMError> {
+        args.try_into().map_err(|_| VMError::IllegalFunctionArguments)
     }
 
-    pub fn check_arg_range(args: &Vec<Value>, range: impl RangeBounds<usize>) -> Result<(), VMError> {
-        if range.contains(&args.len()) {
-            Ok(())
-        } else {
-            Err(VMError::IllegalFunctionArguments)
+    pub fn extract_args_and_optional<const N: usize, const M: usize>(mut args: Vec<Value>) -> Result<([Value; N], [Option<Value>; M]), VMError> {
+        if args.len() < N || args.len() > N + M {
+            return Err(VMError::IllegalFunctionArguments);
         }
+        let mut arr: Vec<_> = args.drain(N..).map(|v| Some(v)).collect();
+        arr.resize(M, None);
+        Ok((
+            args.try_into().map_err(|_| ()).unwrap(),
+            arr.try_into().map_err(|_| ()).unwrap()
+        ))
+    }
+
+    pub fn extract_args_and_array<const N: usize>(mut args: Vec<Value>) -> Result<([Value; N], Vec<Value>), VMError> {
+        if args.len() < N {
+            return Err(VMError::IllegalFunctionArguments);
+        }
+        let arr = args.drain(N..).collect();
+        Ok((
+            args.try_into().map_err(|_| ()).unwrap(),
+            arr
+        ))
     }
 }
 

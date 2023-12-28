@@ -97,7 +97,7 @@ fn execute_closure(
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
                             .clone());
                     }
-                    _ => return Err(VMError::invalid_type("object/array", obj.type_to_str()))
+                    _ => return Err(VMError::invalid_type("object/array", &obj))
                 }
             }
             code::STORE => {
@@ -142,7 +142,7 @@ fn execute_closure(
                         *a.get_mut()?.get_mut(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
                     }
-                    _ => return Err(VMError::invalid_type("object/array", obj.type_to_str()))
+                    _ => return Err(VMError::invalid_type("object/array", &obj))
                 }
             }
             code::DUP => stack.push(stack_top(&stack)?.clone()),
@@ -240,7 +240,7 @@ fn execute_closure(
                         func(ctx, &state, args)?
                     ),
                     v => return Err(
-                        VMError::invalid_type("closure/native function", v.type_to_str())
+                        VMError::invalid_type("closure/native function", v)
                     )
                 }
             }
@@ -252,7 +252,7 @@ fn execute_closure(
                     Value::Int(v1) => *v1 += v2.as_int()?,
                     Value::Float(v1) => *v1 += v2.as_float()?,
                     Value::String(s) => *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
-                    _ => return Err(VMError::invalid_type("int/float/string", v1.type_to_str()))
+                    _ => return Err(VMError::invalid_type("int/float/string", v1))
                 }
             }
             code::SUB => {
@@ -261,7 +261,7 @@ fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 -= v2.as_int()?,
                     Value::Float(v1) => *v1 -= v2.as_float()?,
-                    _ => return Err(VMError::invalid_type("int/float", v1.type_to_str()))
+                    _ => return Err(VMError::invalid_type("int/float", v1))
                 }
             }
             code::MUL => {
@@ -270,7 +270,7 @@ fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 *= v2.as_int()?,
                     Value::Float(v1) => *v1 *= v2.as_float()?,
-                    _ => return Err(VMError::invalid_type("int/float", v1.type_to_str()))
+                    _ => return Err(VMError::invalid_type("int/float", v1))
                 }
             }
             code::DIV => {
@@ -279,7 +279,7 @@ fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 /= v2.as_int()?,
                     Value::Float(v1) => *v1 /= v2.as_float()?,
-                    _ => return Err(VMError::invalid_type("int/float", v1.type_to_str()))
+                    _ => return Err(VMError::invalid_type("int/float", v1))
                 }
             }
             code::MOD => {
@@ -292,7 +292,7 @@ fn execute_closure(
                 match v {
                     Value::Int(v) => *v = -*v,
                     Value::Float(v) => *v = -*v,
-                    _ => return Err(VMError::invalid_type("int/float", v.type_to_str()))
+                    _ => return Err(VMError::invalid_type("int/float", v))
                 }
             }
             code::CMP_EQ => {
@@ -329,7 +329,7 @@ fn execute_closure(
                 let v = stack_top_mut(&mut stack)?;
                 match v {
                     Value::Bool(b) => *b = !*b,
-                    _ => return Err(VMError::invalid_type("bool", v.type_to_str()))
+                    _ => return Err(VMError::invalid_type("bool", v))
                 }
             }
             code::BAND => {
@@ -368,7 +368,7 @@ fn execute_closure(
                     Value::String(s) => s.len(),
                     Value::Object(o) => o.get().len(),
                     Value::Array(a) => a.get().len(),
-                    _ => return Err(VMError::invalid_type("string/object/array", v.type_to_str()))
+                    _ => return Err(VMError::invalid_type("string/object/array", &v))
                 };
                 stack.push(Value::Int(len as i64));
             }
