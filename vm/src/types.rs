@@ -389,5 +389,6 @@ impl Context {
 pub struct ProgramState {
     pub program_idx: usize,
     pub func_idx: usize,
-    pub variables: Gc<Variables>
+    pub variables: Gc<Variables>,
+    pub args: Vec<Value>
 }

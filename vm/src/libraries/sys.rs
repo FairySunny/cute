@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::types::{VMError, Value, Context};
+use crate::{types::{VMError, Value, Context}, executor};
 
 pub fn load_libs(ctx: &mut Context) {
     let mut lib = HashMap::new();
@@ -7,6 +7,21 @@ pub fn load_libs(ctx: &mut Context) {
     lib.insert("exit".into(), Value::NativeFunction(|_, _, args| {
         let [code] = Value::extract_args(args)?;
         Err(VMError::Exit(code.as_int()?))
+    }));
+
+    lib.insert("call".into(), Value::NativeFunction(|ctx, state, args| {
+        let [func, arg_arr] = Value::extract_args(args)?;
+        let arg_arr = arg_arr.as_arr()?.get().clone();
+        match &func {
+            Value::Closure(c) => executor::call(ctx, c, arg_arr),
+            Value::NativeFunction(f) => f(ctx, state, arg_arr),
+            v => Err(VMError::invalid_type("closure/native function", v))
+        }
+    }));
+
+    lib.insert("arguments".into(), Value::NativeFunction(|_, state, args| {
+        let [] = Value::extract_args(args)?;
+        Ok(Value::new_arr(state.args.clone()))
     }));
 
     lib.insert("locked_copy".into(), Value::NativeFunction(|_, _, args| {

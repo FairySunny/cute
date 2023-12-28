@@ -38,8 +38,7 @@ fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
 
 fn execute_closure(
     ctx: &mut Context,
-    state: ProgramState,
-    args: Vec<Value>
+    state: ProgramState
 ) -> Result<Value, VMError> {
     if state.func_idx >= ctx.get_program(state.program_idx).func_list.len() {
         return Err(VMError::FunctionIndexOutOfBound);
@@ -184,7 +183,7 @@ fn execute_closure(
             }
             code::PUSH_ARG => {
                 let arg_idx: usize = next(&cur_func, &mut pc)?.into();
-                stack.push(args.get(arg_idx).unwrap_or(&Value::Null).clone());
+                stack.push(state.args.get(arg_idx).unwrap_or(&Value::Null).clone());
             }
             code::PUSH_SELF => stack.push(state.variables.this().clone()),
             code::PUSH_SUPER => {
@@ -405,9 +404,9 @@ pub fn call(
         ProgramState {
             program_idx: closure.program_idx,
             func_idx: closure.func_idx,
-            variables: Variables::new_gc(Some(&closure.parent))
-        },
-        args
+            variables: Variables::new_gc(Some(&closure.parent)),
+            args
+        }
     )
 }
 
@@ -422,9 +421,9 @@ pub fn execute_file(
         ProgramState {
             program_idx,
             func_idx: 0,
-            variables: Variables::new_gc(None)
-        },
-        vec![]
+            variables: Variables::new_gc(None),
+            args: vec![]
+        }
     )
 }
 
@@ -463,9 +462,9 @@ pub fn execute_program(program: ProgramBundle, path: Option<Rc<Path>>) -> Result
         ProgramState {
             program_idx: 0,
             func_idx: 0,
-            variables: Variables::new_gc(None)
-        },
-        vec![]
+            variables: Variables::new_gc(None),
+            args: vec![]
+        }
     )?;
     Ok(())
 }
