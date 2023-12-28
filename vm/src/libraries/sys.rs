@@ -20,14 +20,31 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(locked)
     }));
 
-    lib.insert("as_lib".into(), Value::NativeFunction(|ctx, _, args| {
-        let [value, name] = Value::extract_args(args)?;
+    lib.insert("add_lib".into(), Value::NativeFunction(|ctx, _, args| {
+        let [name, lib] = Value::extract_args(args)?;
         let name = name.as_str()?;
         if let Some(_) = ctx.get_lib(name) {
             return Err(VMError::IllegalState);
         }
-        ctx.add_lib(name.clone(), value);
+        ctx.add_lib(name.clone(), lib);
         Ok(Value::Null)
+    }));
+
+    lib.insert("get_libs".into(), Value::NativeFunction(|ctx, _, args| {
+        let [] = Value::extract_args(args)?;
+        let libs_iter = ctx.get_libs().iter().map(|(k, v)|
+            Value::new_arr(vec![
+                Value::String(k.clone()),
+                v.clone()
+            ])
+        );
+        let file_libs_iter = ctx.get_file_libs().iter().map(|(k, v)|
+            Value::new_arr(vec![
+                k.to_str().map_or(Value::Null, |s| Value::String(s.into())),
+                v.clone()
+            ])
+        );
+        Ok(Value::new_arr(libs_iter.chain(file_libs_iter).collect()))
     }));
 
     ctx.add_lib("sys".into(), Value::new_locked_obj(lib));

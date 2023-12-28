@@ -342,7 +342,6 @@ impl Context {
     }
 
     pub fn add_program(&mut self, program: ProgramBundle, path: Option<Rc<Path>>) -> usize {
-        eprintln!("Program: {:?}", path);
         let idx = self.programs.len();
         self.programs.push((program, path));
         idx
@@ -368,13 +367,20 @@ impl Context {
         self.libs.get(name)
     }
 
+    pub fn get_libs(&self) -> &HashMap<Rc<str>, Value> {
+        &self.libs
+    }
+
     pub fn add_file_lib(&mut self, path: Rc<Path>, lib: Value) {
-        eprintln!("Import: {:?}", path);
         self.file_libs.insert(path, lib);
     }
 
     pub fn get_file_lib(&self, path: &Path) -> Option<&Value> {
         self.file_libs.get(path)
+    }
+
+    pub fn get_file_libs(&self) -> &HashMap<Rc<Path>, Value> {
+        &self.file_libs
     }
 }
 
