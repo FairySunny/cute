@@ -149,6 +149,10 @@ impl Value {
         Self::Array(Gc::new(Lockable::new(a, false)))
     }
 
+    pub fn new_locked_arr(a: Vec<Value>) -> Self {
+        Self::Array(Gc::new(Lockable::new(a, true)))
+    }
+
     pub fn as_int(&self) -> Result<i64, VMError> {
         match self {
             Value::Int(i) => Ok(*i),

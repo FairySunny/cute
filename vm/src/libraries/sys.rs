@@ -11,6 +11,16 @@ pub fn load_libs(ctx: &mut Context) {
         Err(VMError::Exit(code))
     }));
 
+    lib.insert("locked_copy".into(), Value::NativeFunction(|_, _, args| {
+        Value::check_arg_cnt(&args, 1)?;
+        let locked = match &args[0] {
+            Value::Object(o) => Value::new_locked_obj(o.get().clone()),
+            Value::Array(a) => Value::new_locked_arr(a.get().clone()),
+            v => return Err(VMError::invalid_type("object/array", v.type_to_str()))
+        };
+        Ok(locked)
+    }));
+
     lib.insert("as_lib".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
         let name = args[1].as_str()?;
