@@ -92,7 +92,7 @@ fn execute_closure(
                         }
                     }
                     Value::Array(a) => {
-                        let idx: usize = idx.as_idx()?;
+                        let idx = idx.as_idx()?;
                         stack.push(a.get().get(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
                             .clone());
@@ -138,7 +138,7 @@ fn execute_closure(
                         };
                     }
                     Value::Array(a) => {
-                        let idx: usize = idx.as_idx()?;
+                        let idx = idx.as_idx()?;
                         *a.get_mut()?.get_mut(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
                     }

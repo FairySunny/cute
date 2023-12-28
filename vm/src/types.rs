@@ -335,6 +335,7 @@ impl Context {
 
         libraries::misc::load_libs(&mut ctx);
         libraries::types::load_libs(&mut ctx);
+        libraries::strings::load_libs(&mut ctx);
         libraries::objects::load_libs(&mut ctx);
         libraries::arrays::load_libs(&mut ctx);
         libraries::sys::load_libs(&mut ctx);
