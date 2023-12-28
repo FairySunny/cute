@@ -60,14 +60,14 @@ fn execute_closure(
         match code {
             code::LOAD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match this.borrow().get().get(str) {
+                match this.get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
             }
             code::LOAD_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
-                match state.variables.parent_obj()?.borrow().get().get(str) {
+                match state.variables.parent_obj()?.get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 }
@@ -75,7 +75,7 @@ fn execute_closure(
             code::LOAD_FIELD => {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let obj = stack_pop(&mut stack)?;
-                match obj.as_obj()?.borrow().get().get(str) {
+                match obj.as_obj()?.get().get(str) {
                     Some(v) => stack.push(v.clone()),
                     None => stack.push(Value::Null)
                 };
@@ -86,14 +86,14 @@ fn execute_closure(
                 match &obj {
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
-                        match o.borrow().get().get(idx) {
+                        match o.get().get(idx) {
                             Some(v) => stack.push(v.clone()),
                             None => stack.push(Value::Null)
                         }
                     }
                     Value::Array(a) => {
                         let idx: usize = idx.as_idx()?;
-                        stack.push(a.borrow().get().get(idx)
+                        stack.push(a.get().get(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?
                             .clone());
                     }
@@ -104,18 +104,16 @@ fn execute_closure(
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let value = stack_pop(&mut stack)?;
                 match &value {
-                    Value::Null => this.borrow_mut().get_mut()?.remove(str),
-                    _ => this.borrow_mut().get_mut()?
-                        .insert(str.clone(), value)
+                    Value::Null => this.get_mut()?.remove(str),
+                    _ => this.get_mut()?.insert(str.clone(), value)
                 };
             }
             code::STORE_SUPER => {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let value = stack_pop(&mut stack)?;
                 match &value {
-                    Value::Null => state.variables.parent_obj()?.borrow_mut().get_mut()?.remove(str),
-                    _ => state.variables.parent_obj()?.borrow_mut().get_mut()?
-                        .insert(str.clone(), value)
+                    Value::Null => state.variables.parent_obj()?.get_mut()?.remove(str),
+                    _ => state.variables.parent_obj()?.get_mut()?.insert(str.clone(), value)
                 };
             }
             code::STORE_FIELD => {
@@ -123,9 +121,8 @@ fn execute_closure(
                 let value = stack_pop(&mut stack)?;
                 let obj = stack_pop(&mut stack)?;
                 match &value {
-                    Value::Null => obj.as_obj()?.borrow_mut().get_mut()?.remove(str),
-                    _ => obj.as_obj()?.borrow_mut().get_mut()?
-                        .insert(str.clone(), value.clone())
+                    Value::Null => obj.as_obj()?.get_mut()?.remove(str),
+                    _ => obj.as_obj()?.get_mut()?.insert(str.clone(), value.clone())
                 };
             }
             code::STORE_ITEM => {
@@ -136,14 +133,13 @@ fn execute_closure(
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
                         match &value {
-                            Value::Null => o.borrow_mut().get_mut()?.remove(idx),
-                            _ => o.borrow_mut().get_mut()?
-                                .insert(idx.clone(), value.clone())
+                            Value::Null => o.get_mut()?.remove(idx),
+                            _ => o.get_mut()?.insert(idx.clone(), value.clone())
                         };
                     }
                     Value::Array(a) => {
                         let idx: usize = idx.as_idx()?;
-                        *a.borrow_mut().get_mut()?.get_mut(idx)
+                        *a.get_mut()?.get_mut(idx)
                             .ok_or_else(|| VMError::ArrayIndexOutOfBound)? = value.clone();
                     }
                     _ => return Err(VMError::invalid_type("object/array", obj.type_to_str()))
@@ -370,8 +366,8 @@ fn execute_closure(
                 let v = stack_pop(&mut stack)?;
                 let len = match &v {
                     Value::String(s) => s.len(),
-                    Value::Object(o) => o.borrow().get().len(),
-                    Value::Array(a) => a.borrow().get().len(),
+                    Value::Object(o) => o.get().len(),
+                    Value::Array(a) => a.get().len(),
                     _ => return Err(VMError::invalid_type("string/object/array", v.type_to_str()))
                 };
                 stack.push(Value::Int(len as i64));

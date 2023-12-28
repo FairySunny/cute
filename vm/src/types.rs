@@ -1,5 +1,5 @@
 use std::{collections::HashMap, rc::Rc, ops::RangeBounds, io, path::{PathBuf, Path}};
-use gc::{Trace, Finalize, Gc, GcCell};
+use gc::{Trace, Finalize, Gc, GcCell, GcCellRef, GcCellRefMut};
 use bytecode::program::ProgramBundle;
 use crate::libraries;
 
@@ -37,37 +37,29 @@ impl From<io::Error> for VMError {
 }
 
 #[derive(Trace, Finalize)]
-pub struct Lockable<T> {
-    data: T,
+pub struct Lockable<T: Trace + Finalize + 'static> {
+    data: GcCell<T>,
     locked: bool
 }
 
-impl<T> Lockable<T> {
+impl<T: Trace + Finalize + 'static> Lockable<T> {
     pub fn new(data: T, locked: bool) -> Self {
-        Self { data, locked }
+        Self { data: GcCell::new(data), locked }
     }
 
     pub fn is_locked(&self) -> bool {
         self.locked
     }
 
-    pub fn lock(&mut self) {
-        self.locked = true;
+    pub fn get(&self) -> GcCellRef<T> {
+        self.data.borrow()
     }
 
-    pub fn unlock(&mut self) {
-        self.locked = false;
-    }
-
-    pub fn get(&self) -> &T {
-        &self.data
-    }
-
-    pub fn get_mut(&mut self) -> Result<&mut T, VMError> {
+    pub fn get_mut(&self) -> Result<GcCellRefMut<T>, VMError> {
         if self.locked {
             Err(VMError::ObjectLocked)
         } else {
-            Ok(&mut self.data)
+            Ok(self.data.borrow_mut())
         }
     }
 }
@@ -94,7 +86,7 @@ impl Variables {
         &self.this
     }
 
-    pub fn this_obj(&self) -> &Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>> {
+    pub fn this_obj(&self) -> &Gc<Lockable<HashMap<Rc<str>, Value>>> {
         self.this.as_obj().expect("`Variables.this` is not object")
     }
 
@@ -102,7 +94,7 @@ impl Variables {
         self.parent.as_ref().ok_or_else(|| VMError::SuperDoesNotExist)
     }
 
-    pub fn parent_obj(&self) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>, VMError> {
+    pub fn parent_obj(&self) -> Result<&Gc<Lockable<HashMap<Rc<str>, Value>>>, VMError> {
         Ok(self.parent()?.this_obj())
     }
 }
@@ -121,8 +113,8 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     String(Rc<str>),
-    Object(Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>),
-    Array(Gc<GcCell<Lockable<Vec<Value>>>>),
+    Object(Gc<Lockable<HashMap<Rc<str>, Value>>>),
+    Array(Gc<Lockable<Vec<Value>>>),
     Closure(Closure),
     NativeFunction(
         #[unsafe_ignore_trace]
@@ -146,15 +138,15 @@ impl Value {
     }
 
     pub fn new_obj(o: HashMap<Rc<str>, Value>) -> Self {
-        Self::Object(Gc::new(GcCell::new(Lockable::new(o, false))))
+        Self::Object(Gc::new(Lockable::new(o, false)))
     }
 
     pub fn new_locked_obj(o: HashMap<Rc<str>, Value>) -> Self {
-        Self::Object(Gc::new(GcCell::new(Lockable::new(o, true))))
+        Self::Object(Gc::new(Lockable::new(o, true)))
     }
 
     pub fn new_arr(a: Vec<Value>) -> Self {
-        Self::Array(Gc::new(GcCell::new(Lockable::new(a, false))))
+        Self::Array(Gc::new(Lockable::new(a, false)))
     }
 
     pub fn as_int(&self) -> Result<i64, VMError> {
@@ -197,14 +189,14 @@ impl Value {
         }
     }
 
-    pub fn as_obj(&self) -> Result<&Gc<GcCell<Lockable<HashMap<Rc<str>, Value>>>>, VMError> {
+    pub fn as_obj(&self) -> Result<&Gc<Lockable<HashMap<Rc<str>, Value>>>, VMError> {
         match self {
             Value::Object(o) => Ok(o),
             _ => Err(VMError::invalid_type("object", self.type_to_str()))
         }
     }
 
-    pub fn as_arr(&self) -> Result<&Gc<GcCell<Lockable<Vec<Value>>>>, VMError> {
+    pub fn as_arr(&self) -> Result<&Gc<Lockable<Vec<Value>>>, VMError> {
         match self {
             Value::Array(a) => Ok(a),
             _ => Err(VMError::invalid_type("array", self.type_to_str()))

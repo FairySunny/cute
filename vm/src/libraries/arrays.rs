@@ -7,13 +7,13 @@ pub fn load_libs(ctx: &mut Context) {
     lib.insert("push".into(), Value::NativeFunction(|_, _, mut args| {
         Value::check_arg_range(&args, 2..)?;
         let mut elements = args.drain(1..).collect();
-        args[0].as_arr()?.borrow_mut().get_mut()?.append(&mut elements);
+        args[0].as_arr()?.get_mut()?.append(&mut elements);
         Ok(Value::Null)
     }));
 
     lib.insert("pop".into(), Value::NativeFunction(|_, _, args| {
         Value::check_arg_cnt(&args, 1)?;
-        args[0].as_arr()?.borrow_mut().get_mut()?.pop()
+        args[0].as_arr()?.get_mut()?.pop()
             .ok_or_else(|| VMError::ArrayIndexOutOfBound)
     }));
 
@@ -24,30 +24,30 @@ pub fn load_libs(ctx: &mut Context) {
         let end = start.checked_add(del_cnt)
             .ok_or_else(|| VMError::ArrayIndexOutOfBound)?;
         let elements: Vec<_> = args.drain(3..).collect();
-        let mut arr = args[0].as_arr()?.borrow_mut();
-        if end > arr.get().len() {
+        let mut arr = args[0].as_arr()?.get_mut()?;
+        if end > arr.len() {
             return Err(VMError::ArrayIndexOutOfBound);
         }
-        Ok(Value::new_arr(arr.get_mut()?.splice(start .. end, elements).collect()))
+        Ok(Value::new_arr(arr.splice(start .. end, elements).collect()))
     }));
 
     lib.insert("slice".into(), Value::NativeFunction(|_, _, args| {
         Value::check_arg_range(&args, 2..4)?;
-        let arr = args[0].as_arr()?.borrow();
+        let arr = args[0].as_arr()?.get();
         let start = args[1].as_idx()?;
         let end = match args.get(2) {
             Some(v) => v.as_idx()?,
-            None => arr.get().len()
+            None => arr.len()
         };
-        if start > end || end > arr.get().len() {
+        if start > end || end > arr.len() {
             return Err(VMError::ArrayIndexOutOfBound);
         }
-        Ok(Value::new_arr(arr.get()[start .. end].to_owned()))
+        Ok(Value::new_arr(arr[start .. end].to_owned()))
     }));
 
     lib.insert("find_first_index".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.borrow().get().clone();
+        let arr = args[0].as_arr()?.get().clone();
         let closure = args[1].as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate() {
             let res = executor::call(
@@ -64,7 +64,7 @@ pub fn load_libs(ctx: &mut Context) {
 
     lib.insert("find_last_index".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.borrow().get().clone();
+        let arr = args[0].as_arr()?.get().clone();
         let closure = args[1].as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate().rev() {
             let res = executor::call(
@@ -81,7 +81,7 @@ pub fn load_libs(ctx: &mut Context) {
 
     lib.insert("for_each".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.borrow().get().clone();
+        let arr = args[0].as_arr()?.get().clone();
         let closure = args[1].as_closure()?;
         for (idx, elem) in arr.into_iter().enumerate() {
             executor::call(
@@ -95,7 +95,7 @@ pub fn load_libs(ctx: &mut Context) {
 
     lib.insert("filter".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.borrow().get().clone();
+        let arr = args[0].as_arr()?.get().clone();
         let closure = args[1].as_closure()?;
         let mut filtered = Vec::with_capacity(arr.len());
         for (idx, elem) in arr.into_iter().enumerate() {
@@ -114,7 +114,7 @@ pub fn load_libs(ctx: &mut Context) {
 
     lib.insert("map".into(), Value::NativeFunction(|ctx, _, args| {
         Value::check_arg_cnt(&args, 2)?;
-        let arr = args[0].as_arr()?.borrow().get().clone();
+        let arr = args[0].as_arr()?.get().clone();
         let closure = args[1].as_closure()?;
         let mut mapped = Vec::with_capacity(arr.len());
         for (idx, elem) in arr.into_iter().enumerate() {
