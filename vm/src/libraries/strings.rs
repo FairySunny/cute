@@ -4,22 +4,6 @@ use crate::types::{VMError, Value, Context};
 pub fn load_libs(ctx: &mut Context) {
     let mut lib = HashMap::new();
 
-    lib.insert("slice".into(), Value::NativeFunction(|_, _, args| {
-        let ([str, start], [end]) = Value::extract_args_and_optional(args)?;
-        let str = str.as_str()?;
-        let start = start.as_idx()?;
-        let end = match &end {
-            Some(v) => v.as_idx()?,
-            None => str.len()
-        };
-        if start > end || end > str.len() {
-            return Err(VMError::ArrayIndexOutOfBound);
-        }
-        let substr = str.get(start .. end)
-            .ok_or(VMError::IllegalFunctionArguments)?;
-        Ok(Value::String(substr.into()))
-    }));
-
     lib.insert("chars".into(), Value::NativeFunction(|_, _, args| {
         let [str] = Value::extract_args(args)?;
         let arr = str.as_str()?.chars()

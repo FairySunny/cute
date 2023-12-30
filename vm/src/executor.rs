@@ -36,10 +36,7 @@ fn stack_pop(stack: &mut Vec<Value>) -> Result<Value, VMError> {
     stack.pop().ok_or(VMError::BadStack)
 }
 
-fn execute_closure(
-    ctx: &mut Context,
-    state: ProgramState
-) -> Result<Value, VMError> {
+fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMError> {
     if state.func_idx >= ctx.get_program(state.program_idx).func_list.len() {
         return Err(VMError::FunctionIndexOutOfBound);
     }
@@ -83,6 +80,15 @@ fn execute_closure(
                 let idx = stack_pop(&mut stack)?;
                 let obj = stack_pop(&mut stack)?;
                 match &obj {
+                    Value::String(s) => {
+                        let idx = idx.as_idx()?;
+                        if idx >= s.len() {
+                            return Err(VMError::ArrayIndexOutOfBound);
+                        }
+                        let char = s.get(idx .. idx + 1)
+                            .ok_or(VMError::InvalidCharBoundary)?;
+                        stack.push(Value::String(char.into()));
+                    }
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
                         match o.get().get(idx) {
@@ -92,9 +98,10 @@ fn execute_closure(
                     }
                     Value::Array(a) => {
                         let idx = idx.as_idx()?;
-                        stack.push(a.get().get(idx)
+                        let elem = a.get().get(idx)
                             .ok_or(VMError::ArrayIndexOutOfBound)?
-                            .clone());
+                            .clone();
+                        stack.push(elem);
                     }
                     _ => return Err(VMError::invalid_type("object/array", &obj))
                 }
@@ -167,19 +174,20 @@ fn execute_closure(
             }
             code::PUSH_CONST => {
                 let const_idx: usize = next(&cur_func, &mut pc)?.into();
-                stack.push(match get_constant(program, const_idx)? {
+                let value = match get_constant(program, const_idx)? {
                     Constant::Int(v) => Value::Int(*v),
                     Constant::Float(v) => Value::Float(*v),
                     Constant::String(v) => Value::String(v.clone())
-                });
+                };
+                stack.push(value);
             }
             code::NEW_ARRAY => {
                 let cnt: usize = next(&cur_func, &mut pc)?.into();
                 if stack.len() < cnt {
                     return Err(VMError::BadStack);
                 }
-                let v = Value::new_arr(stack.drain(stack.len() - cnt ..).collect());
-                stack.push(v);
+                let arr = stack.drain(stack.len() - cnt ..).collect();
+                stack.push(Value::new_arr(arr));
             }
             code::PUSH_ARG => {
                 let arg_idx: usize = next(&cur_func, &mut pc)?.into();
@@ -192,11 +200,12 @@ fn execute_closure(
             }
             code::PUSH_CLOSURE => {
                 let idx: usize = next(&cur_func, &mut pc)?.into();
-                stack.push(Value::Closure(Closure {
+                let closure = Closure {
                     parent: state.variables.clone(),
                     program_idx: state.program_idx,
                     func_idx: idx
-                }));
+                };
+                stack.push(Value::Closure(closure));
             }
             code::JMP => {
                 let offset = next(&cur_func, &mut pc)? as i8;
@@ -228,15 +237,12 @@ fn execute_closure(
                 let args = stack.drain(stack.len() - arg_cnt ..).collect();
                 let func = stack.pop().unwrap();
                 match &func {
-                    Value::Closure(closure) => stack.push(
-                        call(ctx, closure, args)?
-                    ),
-                    Value::NativeFunction(func) => stack.push(
-                        func(ctx, &state, args)?
-                    ),
-                    v => return Err(
-                        VMError::invalid_type("closure/native function", v)
-                    )
+                    Value::Closure(closure) =>
+                        stack.push(call(ctx, closure, args)?),
+                    Value::NativeFunction(func) =>
+                        stack.push(func(ctx, &state, args)?),
+                    v =>
+                        return Err(VMError::invalid_type("closure/native function", v))
                 }
             }
             code::RETURN => break,
@@ -246,7 +252,8 @@ fn execute_closure(
                 match v1 {
                     Value::Int(v1) => *v1 += v2.as_int()?,
                     Value::Float(v1) => *v1 += v2.as_float()?,
-                    Value::String(s) => *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
+                    Value::String(s) =>
+                        *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
                     _ => return Err(VMError::invalid_type("int/float/string", v1))
                 }
             }
@@ -367,6 +374,39 @@ fn execute_closure(
                 };
                 stack.push(Value::Int(len as i64));
             }
+            code::SLICE => {
+                fn as_slice_idx(value: &Value) -> Result<Option<usize>, VMError> {
+                    match value {
+                        Value::Null => Ok(None),
+                        Value::Int(i) => Ok(Some((*i).try_into()
+                            .map_err(|_| VMError::ArrayIndexOutOfBound)?)),
+                        _ => Err(VMError::invalid_type("null/int", value))
+                    }
+                }
+                let end = as_slice_idx(&stack_pop(&mut stack)?)?;
+                let start = as_slice_idx(&stack_pop(&mut stack)?)?.unwrap_or(0);
+                let obj = stack_pop(&mut stack)?;
+                let slice = match &obj {
+                    Value::String(s) => {
+                        let end = end.unwrap_or(s.len());
+                        if start > end || end > s.len() {
+                            return Err(VMError::ArrayIndexOutOfBound);
+                        }
+                        let slice = s.get(start .. end)
+                            .ok_or(VMError::InvalidCharBoundary)?;
+                        Value::String(slice.into())
+                    }
+                    Value::Array(a) => {
+                        let arr = a.get();
+                        let end = end.unwrap_or(arr.len());
+                        let slice = arr.get(start .. end)
+                            .ok_or(VMError::ArrayIndexOutOfBound)?;
+                        Value::new_arr(slice.to_vec())
+                    }
+                    _ => return Err(VMError::invalid_type("string/array", &obj))
+                };
+                stack.push(slice);
+            }
             code::IN => {
                 let mut str = String::new();
                 std::io::stdin().read_line(&mut str).expect("`stdin.read_line` failed");
@@ -390,45 +430,28 @@ fn execute_closure(
     Ok(stack.pop().unwrap())
 }
 
-pub fn call(
-    ctx: &mut Context,
-    closure: &Closure,
-    args: Vec<Value>
-) -> Result<Value, VMError> {
-    execute_closure(
-        ctx,
-        ProgramState {
-            program_idx: closure.program_idx,
-            func_idx: closure.func_idx,
-            variables: Variables::new_gc(Some(&closure.parent)),
-            args
-        }
-    )
+pub fn call(ctx: &mut Context, closure: &Closure, args: Vec<Value>) -> Result<Value, VMError> {
+    execute_closure(ctx, ProgramState {
+        program_idx: closure.program_idx,
+        func_idx: closure.func_idx,
+        variables: Variables::new_gc(Some(&closure.parent)),
+        args
+    })
 }
 
-pub fn execute_file(
-    ctx: &mut Context,
-    path: Rc<Path>
-) -> Result<Value, VMError> {
+pub fn execute_file(ctx: &mut Context, path: Rc<Path>) -> Result<Value, VMError> {
     let program = compiler::compile_file(&path)?;
     let program_idx = ctx.add_program(program, Some(path));
-    execute_closure(
-        ctx,
-        ProgramState {
-            program_idx,
-            func_idx: 0,
-            variables: Variables::new_gc(None),
-            args: vec![]
-        }
-    )
+    execute_closure(ctx, ProgramState {
+        program_idx,
+        func_idx: 0,
+        variables: Variables::new_gc(None),
+        args: vec![]
+    })
 }
 
-pub fn load_library(
-    ctx: &mut Context,
-    state: &ProgramState,
-    name: &str
-) -> Result<Value, VMError> {
-    Ok(match ctx.get_lib(name) {
+pub fn load_library(ctx: &mut Context, state: &ProgramState, name: &str) -> Result<Value, VMError> {
+    let value = match ctx.get_lib(name) {
         Some(lib) => lib.clone(),
         None => {
             let lib_path = PathBuf::from(name.to_owned() + ".cute");
@@ -448,19 +471,17 @@ pub fn load_library(
                 }
             }
         }
-    })
+    };
+    Ok(value)
 }
 
 pub fn execute_program(program: ProgramBundle, path: Option<Rc<Path>>) -> Result<(), VMError> {
     let mut ctx = Context::new(program, path);
-    execute_closure(
-        &mut ctx,
-        ProgramState {
-            program_idx: 0,
-            func_idx: 0,
-            variables: Variables::new_gc(None),
-            args: vec![]
-        }
-    )?;
+    execute_closure(&mut ctx, ProgramState {
+        program_idx: 0,
+        func_idx: 0,
+        variables: Variables::new_gc(None),
+        args: vec![]
+    })?;
     Ok(())
 }

@@ -73,7 +73,7 @@ impl BOp {
 #[derive(Debug)]
 enum ParserError {
     LexerError(LexerError),
-    UnexpectedToken,
+    UnexpectedToken(Token),
     NotLeftValue,
     GeneratingError(GeneratingError)
 }
@@ -94,14 +94,14 @@ impl<'a, 'b> Parser<'a, 'b> {
     fn expect_single(&mut self, expected: char) -> Result<(), ParserError> {
         match self.lexer.next()? {
             Token::Single(char) if char == expected => Ok(()),
-            _ => Err(ParserError::UnexpectedToken)
+            token => Err(ParserError::UnexpectedToken(token))
         }
     }
 
     fn expect_name(&mut self) -> Result<String, ParserError> {
         match self.lexer.next()? {
             Token::Name(name) => Ok(name),
-            _ => Err(ParserError::UnexpectedToken)
+            token => Err(ParserError::UnexpectedToken(token))
         }
     }
 
@@ -195,7 +195,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                     self.program.str(&name)?;
                     None
                 }
-                _ => return Err(ParserError::UnexpectedToken)
+                token => return Err(ParserError::UnexpectedToken(token))
             }
             Token::Single('[') => {
                 let cnt = self.expression_list(&Token::Single(']'))?;
@@ -203,7 +203,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 self.program.byte(cnt);
                 None
             }
-            _ => return Err(ParserError::UnexpectedToken)
+            token => return Err(ParserError::UnexpectedToken(token))
         };
 
         while let &Token::Single(char @ ('.' | '(' | '[')) = self.lexer.peek()? {
@@ -225,9 +225,40 @@ impl<'a, 'b> Parser<'a, 'b> {
                     None
                 }
                 '[' => {
-                    self.expression()?;
-                    self.expect_single(']')?;
-                    Some(LeftValue::Item)
+                    fn after_range(parser: &mut Parser) -> Result<(), ParserError> {
+                        match parser.lexer.peek()? {
+                            Token::Single(']') => {
+                                parser.lexer.next()?;
+                                parser.program.byte(code::PUSH_NULL);
+                            }
+                            _ => {
+                                parser.expression()?;
+                                parser.expect_single(']')?;
+                            }
+                        }
+                        parser.program.byte(code::SLICE);
+                        Ok(())
+                    }
+
+                    match self.lexer.peek()? {
+                        Token::Single(':') => {
+                            self.lexer.next()?;
+                            self.program.byte(code::PUSH_NULL);
+                            after_range(self)?;
+                            None
+                        }
+                        _ => {
+                            self.expression()?;
+                            match self.lexer.next()? {
+                                Token::Single(':') => {
+                                    after_range(self)?;
+                                    None
+                                }
+                                Token::Single(']') => Some(LeftValue::Item),
+                                token => return Err(ParserError::UnexpectedToken(token))
+                            }
+                        }
+                    }
                 }
                 _ => None
             }
@@ -428,7 +459,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             match self.lexer.next()? {
                 Token::Single(',') => {},
                 token if &token == ending => break,
-                _ => return Err(ParserError::UnexpectedToken)
+                token => return Err(ParserError::UnexpectedToken(token))
             }
         }
 

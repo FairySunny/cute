@@ -54,6 +54,7 @@ pub const SHL: u8 = 0x54;
 pub const SHR: u8 = 0x55;
 
 pub const LEN: u8 = 0x58;
+pub const SLICE: u8 = 0x59;
 
 pub const IN: u8 = 0x60;
 pub const OUT: u8 = 0x61;
@@ -154,7 +155,7 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "0x56", params: 0 },
     CodeInfo { name: "0x57", params: 0 },
     CodeInfo { name: "LEN", params: 0 },
-    CodeInfo { name: "0x59", params: 0 },
+    CodeInfo { name: "SLICE", params: 0 },
     CodeInfo { name: "0x5a", params: 0 },
     CodeInfo { name: "0x5b", params: 0 },
     CodeInfo { name: "0x5c", params: 0 },

@@ -29,20 +29,6 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::new_arr(arr.splice(start .. end, elements).collect()))
     }));
 
-    lib.insert("slice".into(), Value::NativeFunction(|_, _, args| {
-        let ([arr, start], [end]) = Value::extract_args_and_optional(args)?;
-        let arr = arr.as_arr()?.get();
-        let start = start.as_idx()?;
-        let end = match &end {
-            Some(v) => v.as_idx()?,
-            None => arr.len()
-        };
-        if start > end || end > arr.len() {
-            return Err(VMError::ArrayIndexOutOfBound);
-        }
-        Ok(Value::new_arr(arr[start .. end].to_owned()))
-    }));
-
     lib.insert("find_first_index".into(), Value::NativeFunction(|ctx, _, args| {
         let [arr, pred] = Value::extract_args(args)?;
         let arr = arr.as_arr()?.get().clone();
