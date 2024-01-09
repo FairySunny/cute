@@ -19,6 +19,13 @@ fn next_str<'a>(func: &Vec<u8>, pc: &mut usize, program: &'a ProgramBundle) -> R
     }
 }
 
+fn jump(pc: &mut usize, offset: u8) -> Result<(), VMError> {
+    *pc -= 1;
+    *pc = pc.checked_add_signed((offset as i8).into())
+        .ok_or(VMError::PCIndexOutOfBound)?;
+    Ok(())
+}
+
 fn get_constant(program: &ProgramBundle, idx: usize) -> Result<&Constant, VMError> {
     program.constant_pool.get(idx)
         .ok_or(VMError::ConstantIndexOutOfBound)
@@ -208,25 +215,25 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 stack.push(Value::Closure(closure));
             }
             code::JMP => {
-                let offset = next(&cur_func, &mut pc)? as i8;
-                pc = (pc as i64 - 1 + offset as i64) as usize;
+                let offset = next(&cur_func, &mut pc)?;
+                jump(&mut pc, offset)?;
             }
             code::JN => {
-                let offset = next(&cur_func, &mut pc)? as i8;
+                let offset = next(&cur_func, &mut pc)?;
                 if let Value::Null = stack_pop(&mut stack)? {
-                    pc = (pc as i64 - 1 + offset as i64) as usize;
+                    jump(&mut pc, offset)?;
                 }
             }
             code::JT => {
-                let offset = next(&cur_func, &mut pc)? as i8;
+                let offset = next(&cur_func, &mut pc)?;
                 if stack_pop(&mut stack)?.as_bool()? {
-                    pc = (pc as i64 - 1 + offset as i64) as usize;
+                    jump(&mut pc, offset)?;
                 }
             }
             code::JF => {
-                let offset = next(&cur_func, &mut pc)? as i8;
+                let offset = next(&cur_func, &mut pc)?;
                 if !stack_pop(&mut stack)?.as_bool()? {
-                    pc = (pc as i64 - 1 + offset as i64) as usize;
+                    jump(&mut pc, offset)?;
                 }
             }
             code::CALL => {
@@ -250,7 +257,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
-                    Value::Int(v1) => *v1 += v2.as_int()?,
+                    Value::Int(v1) => *v1 = v1.wrapping_add(v2.as_int()?),
                     Value::Float(v1) => *v1 += v2.as_float()?,
                     Value::String(s) =>
                         *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
@@ -265,7 +272,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
-                    Value::Int(v1) => *v1 -= v2.as_int()?,
+                    Value::Int(v1) => *v1 = v1.wrapping_sub(v2.as_int()?),
                     Value::Float(v1) => *v1 -= v2.as_float()?,
                     _ => return Err(VMError::invalid_type("int/float", v1))
                 }
@@ -274,7 +281,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
-                    Value::Int(v1) => *v1 *= v2.as_int()?,
+                    Value::Int(v1) => *v1 = v1.wrapping_mul(v2.as_int()?),
                     Value::Float(v1) => *v1 *= v2.as_float()?,
                     _ => return Err(VMError::invalid_type("int/float", v1))
                 }
@@ -283,7 +290,13 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
                 match v1 {
-                    Value::Int(v1) => *v1 /= v2.as_int()?,
+                    Value::Int(v1) => {
+                        let v2 = v2.as_int()?;
+                        if v2 == 0 {
+                            return Err(VMError::DivideByZeroError);
+                        }
+                        *v1 = v1.wrapping_div(v2)
+                    }
                     Value::Float(v1) => *v1 /= v2.as_float()?,
                     _ => return Err(VMError::invalid_type("int/float", v1))
                 }
@@ -291,12 +304,17 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
             code::MOD => {
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
-                *v1.as_int_mut()? %= v2.as_int()?;
+                let v1 = v1.as_int_mut()?;
+                let v2 = v2.as_int()?;
+                if v2 == 0 {
+                    return Err(VMError::DivideByZeroError);
+                }
+                *v1 = v1.wrapping_rem(v2);
             }
             code::NEG => {
                 let v = stack_top_mut(&mut stack)?;
                 match v {
-                    Value::Int(v) => *v = -*v,
+                    Value::Int(v) => *v = v.wrapping_neg(),
                     Value::Float(v) => *v = -*v,
                     _ => return Err(VMError::invalid_type("int/float", v))
                 }
@@ -361,12 +379,16 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
             code::SHL => {
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
-                *v1.as_int_mut()? <<= v2.as_int()?;
+                let v1 = v1.as_int_mut()?;
+                let v2 = v2.as_int()?;
+                *v1 = v1.wrapping_shl(v2 as u32);
             }
             code::SHR => {
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
-                *v1.as_int_mut()? >>= v2.as_int()?;
+                let v1 = v1.as_int_mut()?;
+                let v2 = v2.as_int()?;
+                *v1 = v1.wrapping_shr(v2 as u32);
             }
             code::LEN => {
                 let v = stack_pop(&mut stack)?;

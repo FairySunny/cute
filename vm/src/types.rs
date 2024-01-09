@@ -13,6 +13,7 @@ pub enum VMError {
     ConstantNotString,
     BadStack,
     InvalidType { expected: String, got: String },
+    DivideByZeroError,
     InvalidCharBoundary,
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
