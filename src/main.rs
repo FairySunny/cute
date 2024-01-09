@@ -1,5 +1,5 @@
-use std::{process::{self, ExitCode}, env, io, fs};
-use vm::{executor, types::VMError};
+use std::{process::ExitCode, env, io, fs};
+use vm::executor;
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args().collect();
@@ -7,42 +7,31 @@ fn main() -> ExitCode {
     let (source, path) = match args.len() {
         1 => (
             // read from stdin
-            io::read_to_string(io::stdin())
-                .unwrap_or_else(|e| {
-                    eprintln!("Error reading from stdin: {e}");
-                    process::exit(1);
-                }),
+            io::read_to_string(io::stdin()).unwrap(),
             None
         ),
         2 => (
             // read from file
-            fs::read_to_string(&args[1])
-                .unwrap_or_else(|e| {
-                    eprintln!("Error reading from file: {e}");
-                    process::exit(1);
-                }),
+            fs::read_to_string(&args[1]).unwrap(),
             Some(fs::canonicalize(&args[1]).unwrap().into())
         ),
         _ => {
             eprintln!("Usage: {} [file]", args[0]);
-            process::exit(1);
+            return ExitCode::from(1);
         }
     };
     eprintln!("Path: {:?}", path);
     eprintln!();
     eprintln!();
 
-    let program = compiler::compile_chars(source.chars());
+    let program = compiler::compile_chars(source.chars()).unwrap();
     program.print();
 
     match executor::execute_program(program, path) {
         Ok(_) => ExitCode::SUCCESS,
-        Err(e) => match e {
-            VMError::Exit(code) => ExitCode::from(code as u8),
-            _ => {
-                eprintln!("Error executing script: {:?}", e);
-                ExitCode::from(1)
-            }
+        Err(e) => {
+            eprintln!("Error executing script: {:?}", e);
+            ExitCode::from(1)
         }
     }
 }

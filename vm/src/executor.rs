@@ -1,4 +1,4 @@
-use std::{rc::Rc, path::{Path, PathBuf}};
+use std::{rc::Rc, path::{Path, PathBuf}, fs};
 use bytecode::{program::{ProgramBundle, Constant}, code};
 use crate::types::{VMError, Variables, Closure, Value, Context, ProgramState};
 
@@ -463,7 +463,7 @@ pub fn call(ctx: &mut Context, closure: &Closure, args: Vec<Value>) -> Result<Va
 }
 
 pub fn execute_file(ctx: &mut Context, path: Rc<Path>) -> Result<Value, VMError> {
-    let program = compiler::compile_file(&path)?;
+    let program = compiler::compile_chars(fs::read_to_string(&path)?.chars())?;
     let program_idx = ctx.add_program(program, Some(path));
     execute_closure(ctx, ProgramState {
         program_idx,

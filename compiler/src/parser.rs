@@ -1,6 +1,26 @@
 use crate::lexer::{Lexer, Token, LexerError};
 use bytecode::{code, program::{Program, GeneratingError, JumpWhere}};
 
+#[derive(Debug)]
+pub enum ParserError {
+    LexerError(LexerError),
+    UnexpectedToken(Token),
+    NotLeftValue,
+    GeneratingError(GeneratingError)
+}
+
+impl From<LexerError> for ParserError {
+    fn from(e: LexerError) -> Self {
+        Self::LexerError(e)
+    }
+}
+
+impl From<GeneratingError> for ParserError {
+    fn from(e: GeneratingError) -> Self {
+        Self::GeneratingError(e)
+    }
+}
+
 struct Parser<'a, 'b> {
     lexer: Lexer<'a>,
     program: &'b mut Program
@@ -67,26 +87,6 @@ impl BOp {
             right_pri: priority,
             action
         }
-    }
-}
-
-#[derive(Debug)]
-enum ParserError {
-    LexerError(LexerError),
-    UnexpectedToken(Token),
-    NotLeftValue,
-    GeneratingError(GeneratingError)
-}
-
-impl From<LexerError> for ParserError {
-    fn from(e: LexerError) -> Self {
-        Self::LexerError(e)
-    }
-}
-
-impl From<GeneratingError> for ParserError {
-    fn from(e: GeneratingError) -> Self {
-        Self::GeneratingError(e)
     }
 }
 
@@ -483,7 +483,7 @@ impl<'a, 'b> Parser<'a, 'b> {
     }
 }
 
-pub fn parse(lexer: Lexer, program: &mut Program) {
+pub fn parse(lexer: Lexer, program: &mut Program) -> Result<(), ParserError> {
     let mut parser = Parser { lexer, program };
-    parser.statement_list(&Token::EOF).unwrap();
+    parser.statement_list(&Token::EOF)
 }

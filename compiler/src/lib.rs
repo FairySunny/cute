@@ -1,16 +1,13 @@
 pub mod lexer;
 pub mod parser;
 
-use std::{str::Chars, fs, path::Path, io};
+use std::str::Chars;
 use bytecode::program::{Program, ProgramBundle};
 use lexer::Lexer;
+use parser::ParserError;
 
-pub fn compile_chars(chars: Chars) -> ProgramBundle {
+pub fn compile_chars(chars: Chars) -> Result<ProgramBundle, ParserError> {
     let mut program = Program::new();
-    parser::parse(Lexer::new(chars), &mut program);
-    program.bundle()
-}
-
-pub fn compile_file(path: impl AsRef<Path>) -> Result<ProgramBundle, io::Error> {
-    Ok(compile_chars(fs::read_to_string(path)?.chars()))
+    parser::parse(Lexer::new(chars), &mut program)?;
+    Ok(program.bundle())
 }

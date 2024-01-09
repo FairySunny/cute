@@ -1,6 +1,7 @@
 use std::{collections::HashMap, rc::Rc, io, path::Path};
 use gc::{Trace, Finalize, Gc, GcCell, GcCellRef, GcCellRefMut};
 use bytecode::program::ProgramBundle;
+use compiler::parser::ParserError;
 use crate::libraries;
 
 #[derive(Debug)]
@@ -18,8 +19,8 @@ pub enum VMError {
     ObjectLocked,
     IllegalFunctionArguments,
     IllegalState,
-    IOError(io::Error),
-    Exit(i64)
+    CompilerError(ParserError),
+    IOError(io::Error)
 }
 
 impl VMError {
@@ -28,6 +29,12 @@ impl VMError {
             expected: expected.to_owned(),
             got: got.type_to_str().to_owned()
         }
+    }
+}
+
+impl From<ParserError> for VMError {
+    fn from(e: ParserError) -> Self {
+        Self::CompilerError(e)
     }
 }
 
