@@ -4,18 +4,6 @@ use crate::{types::{VMError, Value, Context}, executor};
 pub fn load_libs(ctx: &mut Context) {
     let mut lib = HashMap::new();
 
-    lib.insert("push".into(), Value::NativeFunction(|_, _, args| {
-        let ([arr], elements) = Value::extract_args_and_array(args)?;
-        arr.as_arr()?.get_mut()?.extend(elements);
-        Ok(Value::Null)
-    }));
-
-    lib.insert("pop".into(), Value::NativeFunction(|_, _, args| {
-        let [arr] = Value::extract_args(args)?;
-        let mut arr = arr.as_arr()?.get_mut()?;
-        arr.pop().ok_or(VMError::ArrayIndexOutOfBound)
-    }));
-
     lib.insert("splice".into(), Value::NativeFunction(|_, _, args| {
         let ([arr, start, del_cnt], elements) = Value::extract_args_and_array(args)?;
         let start = start.as_idx()?;

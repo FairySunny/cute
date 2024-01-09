@@ -254,7 +254,11 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                     Value::Float(v1) => *v1 += v2.as_float()?,
                     Value::String(s) =>
                         *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
-                    _ => return Err(VMError::invalid_type("int/float/string", v1))
+                    Value::Array(a) => {
+                        let arr = [&a.get()[..], &v2.as_arr()?.get()[..]].concat();
+                        *v1 = Value::new_arr(arr);
+                    }
+                    _ => return Err(VMError::invalid_type("int/float/string/array", v1))
                 }
             }
             code::SUB => {
@@ -406,6 +410,25 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                     _ => return Err(VMError::invalid_type("string/array", &obj))
                 };
                 stack.push(slice);
+            }
+            code::TAKE => {
+                let obj = stack_pop(&mut stack)?;
+                let item = match &obj {
+                    Value::Array(a) => {
+                        a.get_mut()?.pop()
+                            .ok_or(VMError::ArrayIndexOutOfBound)?
+                    }
+                    _ => return Err(VMError::invalid_type("array", &obj))
+                };
+                stack.push(item);
+            }
+            code::PUT => {
+                let item = stack_pop(&mut stack)?;
+                let obj = stack_top(&stack)?;
+                match obj {
+                    Value::Array(a) => a.get_mut()?.push(item),
+                    _ => return Err(VMError::invalid_type("array", obj))
+                }
             }
             code::IN => {
                 let mut str = String::new();

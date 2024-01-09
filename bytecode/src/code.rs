@@ -56,6 +56,9 @@ pub const SHR: u8 = 0x55;
 pub const LEN: u8 = 0x58;
 pub const SLICE: u8 = 0x59;
 
+pub const TAKE: u8 = 0x5c;
+pub const PUT: u8 = 0x5d;
+
 pub const IN: u8 = 0x60;
 pub const OUT: u8 = 0x61;
 pub const LOAD_LIB: u8 = 0x62;
@@ -158,8 +161,8 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "SLICE", params: 0 },
     CodeInfo { name: "0x5a", params: 0 },
     CodeInfo { name: "0x5b", params: 0 },
-    CodeInfo { name: "0x5c", params: 0 },
-    CodeInfo { name: "0x5d", params: 0 },
+    CodeInfo { name: "TAKE", params: 0 },
+    CodeInfo { name: "PUT", params: 0 },
     CodeInfo { name: "0x5e", params: 0 },
     CodeInfo { name: "0x5f", params: 0 },
     CodeInfo { name: "IN", params: 0 },

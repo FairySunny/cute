@@ -282,6 +282,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
             Token::Shr => Some(UOp { pri: 0, action: UOpAction::In, write_lval: true }),
             Token::Shl => Some(UOp { pri: 0, action: UOpAction::Out, write_lval: false }),
+            Token::Channel => Some(UOp { pri: 16, action: UOpAction::Code(code::TAKE), write_lval: false }),
             _ => None
         };
 
@@ -311,8 +312,9 @@ impl<'a, 'b> Parser<'a, 'b> {
             Token::Le => Some(BOp::left_c(7, code::CMP_LE)),
             Token::Shl => Some(BOp::left_c(11, code::SHL)),
             Token::Shr => Some(BOp::left_c(11, code::SHR)),
-            Token::Or => Some(BOp::left(5, BOpAction::Or)),
-            Token::And => Some(BOp::left(6, BOpAction::And)),
+            Token::Or => Some(BOp::left(4, BOpAction::Or)),
+            Token::And => Some(BOp::left(5, BOpAction::And)),
+            Token::Channel => Some(BOp::left_c(6, code::PUT)),
             _ => None
         };
 
