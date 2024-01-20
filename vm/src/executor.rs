@@ -1,6 +1,6 @@
 use std::{rc::Rc, path::{Path, PathBuf}, fs};
 use bytecode::{program::{ProgramBundle, Constant}, code};
-use crate::types::{VMError, Variables, Closure, Value, Context, ProgramState};
+use crate::types::{VMError, Variables, VMString, Closure, Value, Context, ProgramState};
 
 fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     let code = *func.get(*pc)
@@ -10,7 +10,7 @@ fn next(func: &Vec<u8>, pc: &mut usize) -> Result<u8, VMError> {
     Ok(code)
 }
 
-fn next_str<'a>(func: &Vec<u8>, pc: &mut usize, program: &'a ProgramBundle) -> Result<&'a Rc<str>, VMError> {
+fn next_str<'a>(func: &Vec<u8>, pc: &mut usize, program: &'a ProgramBundle) -> Result<&'a [u16], VMError> {
     let str_idx: usize = next(func, pc)?.into();
     let constant = get_constant(program, str_idx)?;
     match constant {
@@ -89,12 +89,9 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 match &obj {
                     Value::String(s) => {
                         let idx = idx.as_idx()?;
-                        if idx >= s.len() {
-                            return Err(VMError::ArrayIndexOutOfBound);
-                        }
-                        let char = s.get(idx .. idx + 1)
-                            .ok_or(VMError::InvalidCharBoundary)?;
-                        stack.push(Value::String(char.into()));
+                        let char = *s.data().get(idx)
+                            .ok_or(VMError::ArrayIndexOutOfBound)?;
+                        stack.push(Value::String([char][..].into()));
                     }
                     Value::Object(o) => {
                         let idx = idx.as_str()?;
@@ -118,7 +115,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let value = stack_pop(&mut stack)?;
                 match &value {
                     Value::Null => this.get_mut()?.remove(str),
-                    _ => this.get_mut()?.insert(str.clone(), value)
+                    _ => this.get_mut()?.insert(str.into(), value)
                 };
             }
             code::STORE_SUPER => {
@@ -126,7 +123,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let value = stack_pop(&mut stack)?;
                 match &value {
                     Value::Null => state.variables.parent_obj()?.get_mut()?.remove(str),
-                    _ => state.variables.parent_obj()?.get_mut()?.insert(str.clone(), value)
+                    _ => state.variables.parent_obj()?.get_mut()?.insert(str.into(), value)
                 };
             }
             code::STORE_FIELD => {
@@ -135,7 +132,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let obj = stack_pop(&mut stack)?;
                 match &value {
                     Value::Null => obj.as_obj()?.get_mut()?.remove(str),
-                    _ => obj.as_obj()?.get_mut()?.insert(str.clone(), value.clone())
+                    _ => obj.as_obj()?.get_mut()?.insert(str.into(), value.clone())
                 };
             }
             code::STORE_ITEM => {
@@ -184,7 +181,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let value = match get_constant(program, const_idx)? {
                     Constant::Int(v) => Value::Int(*v),
                     Constant::Float(v) => Value::Float(*v),
-                    Constant::String(v) => Value::String(v.clone())
+                    Constant::String(v) => Value::String(v[..].into())
                 };
                 stack.push(value);
             }
@@ -259,8 +256,10 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 match v1 {
                     Value::Int(v1) => *v1 = v1.wrapping_add(v2.as_int()?),
                     Value::Float(v1) => *v1 += v2.as_float()?,
-                    Value::String(s) =>
-                        *v1 = Value::String((s.to_string() + v2.as_str()?).into()),
+                    Value::String(s) => {
+                        let str = [s.data(), v2.as_str()?.data()].concat();
+                        *v1 = Value::String(str[..].into());
+                    }
                     Value::Array(a) => {
                         let arr = [&a.get()[..], &v2.as_arr()?.get()[..]].concat();
                         *v1 = Value::new_arr(arr);
@@ -393,7 +392,7 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
             code::LEN => {
                 let v = stack_pop(&mut stack)?;
                 let len = match &v {
-                    Value::String(s) => s.len(),
+                    Value::String(s) => s.data().len(),
                     Value::Object(o) => o.get().len(),
                     Value::Array(a) => a.get().len(),
                     _ => return Err(VMError::invalid_type("string/object/array", &v))
@@ -414,12 +413,10 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 let obj = stack_pop(&mut stack)?;
                 let slice = match &obj {
                     Value::String(s) => {
-                        let end = end.unwrap_or(s.len());
-                        if start > end || end > s.len() {
-                            return Err(VMError::ArrayIndexOutOfBound);
-                        }
-                        let slice = s.get(start .. end)
-                            .ok_or(VMError::InvalidCharBoundary)?;
+                        let str = s.data();
+                        let end = end.unwrap_or(str.len());
+                        let slice = str.get(start .. end)
+                            .ok_or(VMError::ArrayIndexOutOfBound)?;
                         Value::String(slice.into())
                     }
                     Value::Array(a) => {
@@ -458,12 +455,12 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                 if str.ends_with("\n") {
                     str.truncate(str.len() - 1);
                 }
-                stack.push(Value::String(str.into()));
+                stack.push(Value::String(str[..].into()));
             }
             code::OUT => println!("{}", stack_pop(&mut stack)?.to_string()),
             code::LOAD_LIB => {
-                let str = next_str(&cur_func, &mut pc, program)?;
-                let value = load_library(ctx, &state, &str.clone())?;
+                let str = next_str(&cur_func, &mut pc, program)?.into();
+                let value = load_library(ctx, &state, &str)?;
                 stack.push(value);
             }
             _ => return Err(VMError::UnknownInstruction(code))
@@ -495,11 +492,11 @@ pub fn execute_file(ctx: &mut Context, path: Rc<Path>) -> Result<Value, VMError>
     })
 }
 
-pub fn load_library(ctx: &mut Context, state: &ProgramState, name: &str) -> Result<Value, VMError> {
+pub fn load_library(ctx: &mut Context, state: &ProgramState, name: &VMString) -> Result<Value, VMError> {
     let value = match ctx.get_lib(name) {
         Some(lib) => lib.clone(),
         None => {
-            let lib_path = PathBuf::from(name.to_owned() + ".cute");
+            let lib_path = PathBuf::from(name.to_string() + ".cute");
             let lib_path: Rc<Path> = if lib_path.is_absolute() {
                 lib_path
             } else {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, io, path::Path};
+use std::{collections::HashMap, rc::Rc, borrow::Borrow, io, path::Path};
 use gc::{Trace, Finalize, Gc, GcCell, GcCellRef, GcCellRefMut};
 use bytecode::program::ProgramBundle;
 use compiler::parser::ParserError;
@@ -14,7 +14,6 @@ pub enum VMError {
     BadStack,
     InvalidType { expected: String, got: String },
     DivideByZeroError,
-    InvalidCharBoundary,
     ArrayIndexOutOfBound,
     SuperDoesNotExist,
     ObjectLocked,
@@ -116,6 +115,42 @@ impl Variables {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Trace, Finalize)]
+pub struct VMString(
+    #[unsafe_ignore_trace]
+    Rc<[u16]>
+);
+
+impl VMString {
+    pub fn data(&self) -> &[u16] {
+        &self.0
+    }
+}
+
+impl From<&[u16]> for VMString {
+    fn from(data: &[u16]) -> Self {
+        Self(data.into())
+    }
+}
+
+impl From<&str> for VMString {
+    fn from(s: &str) -> Self {
+        Self(s.encode_utf16().collect())
+    }
+}
+
+impl Borrow<[u16]> for VMString {
+    fn borrow(&self) -> &[u16] {
+        &self.0
+    }
+}
+
+impl ToString for VMString {
+    fn to_string(&self) -> String {
+        String::from_utf16_lossy(&self.0)
+    }
+}
+
 #[derive(Clone, Trace, Finalize)]
 pub struct Closure {
     pub parent: Gc<Variables>,
@@ -123,7 +158,7 @@ pub struct Closure {
     pub func_idx: usize
 }
 
-type ObjectRef = Gc<Lockable<HashMap<Rc<str>, Value>>>;
+type ObjectRef = Gc<Lockable<HashMap<VMString, Value>>>;
 type ArrayRef = Gc<Lockable<Vec<Value>>>;
 
 #[derive(Clone, Trace, Finalize)]
@@ -132,7 +167,7 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
-    String(Rc<str>),
+    String(VMString),
     Object(ObjectRef),
     Array(ArrayRef),
     Closure(Closure),
@@ -157,11 +192,11 @@ impl Value {
         }
     }
 
-    pub fn new_obj(o: HashMap<Rc<str>, Value>) -> Self {
+    pub fn new_obj(o: HashMap<VMString, Value>) -> Self {
         Self::Object(Gc::new(Lockable::new(o, false)))
     }
 
-    pub fn new_locked_obj(o: HashMap<Rc<str>, Value>) -> Self {
+    pub fn new_locked_obj(o: HashMap<VMString, Value>) -> Self {
         Self::Object(Gc::new(Lockable::new(o, true)))
     }
 
@@ -206,7 +241,7 @@ impl Value {
         }
     }
 
-    pub fn as_str(&self) -> Result<&Rc<str>, VMError> {
+    pub fn as_str(&self) -> Result<&VMString, VMError> {
         match self {
             Value::String(s) => Ok(s),
             _ => Err(VMError::invalid_type("string", self))
@@ -280,7 +315,7 @@ impl Value {
         Ok(match self {
             Value::Int(i) => *i > other.as_int()?,
             Value::Float(f) => *f > other.as_float()?,
-            Value::String(s) => s > other.as_str()?,
+            Value::String(s) => s.data() > other.as_str()?.data(),
             _ => return Err(VMError::invalid_type("int/float/string", self))
         })
     }
@@ -289,7 +324,7 @@ impl Value {
         Ok(match self {
             Value::Int(i) => *i < other.as_int()?,
             Value::Float(f) => *f < other.as_float()?,
-            Value::String(s) => s < other.as_str()?,
+            Value::String(s) => s.data() < other.as_str()?.data(),
             _ => return Err(VMError::invalid_type("int/float/string", self))
         })
     }
@@ -338,7 +373,7 @@ impl Value {
 
 pub struct Context {
     programs: Vec<(ProgramBundle, Option<Rc<Path>>)>,
-    libs: HashMap<Rc<str>, Value>,
+    libs: HashMap<VMString, Value>,
     file_libs: HashMap<Rc<Path>, Value>
 }
 
@@ -352,7 +387,6 @@ impl Context {
 
         libraries::misc::load_libs(&mut ctx);
         libraries::types::load_libs(&mut ctx);
-        libraries::strings::load_libs(&mut ctx);
         libraries::objects::load_libs(&mut ctx);
         libraries::arrays::load_libs(&mut ctx);
         libraries::sys::load_libs(&mut ctx);
@@ -378,15 +412,15 @@ impl Context {
         self.get_program_path(idx).and_then(|p| p.parent())
     }
 
-    pub fn add_lib(&mut self, name: Rc<str>, lib: Value) {
+    pub fn add_lib(&mut self, name: VMString, lib: Value) {
         self.libs.insert(name, lib);
     }
 
-    pub fn get_lib(&self, name: &str) -> Option<&Value> {
+    pub fn get_lib(&self, name: &VMString) -> Option<&Value> {
         self.libs.get(name)
     }
 
-    pub fn get_libs(&self) -> &HashMap<Rc<str>, Value> {
+    pub fn get_libs(&self) -> &HashMap<VMString, Value> {
         &self.libs
     }
 

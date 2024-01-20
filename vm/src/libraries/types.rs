@@ -14,7 +14,7 @@ pub fn load_libs(ctx: &mut Context) {
         let type_str = value.type_to_str();
         let mut required = Vec::with_capacity(types.len());
         for t in &types {
-            let arg_str = t.as_str()?.as_ref();
+            let arg_str = t.as_str()?.to_string();
             if type_str == arg_str {
                 return Ok(Value::Null);
             }
@@ -30,7 +30,7 @@ pub fn load_libs(ctx: &mut Context) {
         let [value] = Value::extract_args(args)?;
         let str = match &value {
             Value::String(_) => value,
-            _ => Value::String(value.to_string().into())
+            _ => Value::String(value.to_string()[..].into())
         };
         Ok(str)
     }));
@@ -47,16 +47,34 @@ pub fn load_libs(ctx: &mut Context) {
 
     lib.insert("string_to_int".into(), Value::NativeFunction(|_, _, args| {
         let [str] = Value::extract_args(args)?;
-        let int = Value::Int(i64::from_str(str.as_str()?)
+        let int = Value::Int(i64::from_str(&str.as_str()?.to_string())
             .map_err(|_| VMError::IllegalFunctionArguments)?);
         Ok(int)
     }));
 
     lib.insert("string_to_float".into(), Value::NativeFunction(|_, _, args| {
         let [str] = Value::extract_args(args)?;
-        let float = Value::Float(f64::from_str(str.as_str()?)
+        let float = Value::Float(f64::from_str(&str.as_str()?.to_string())
             .map_err(|_| VMError::IllegalFunctionArguments)?);
         Ok(float)
+    }));
+
+    lib.insert("char_code_to_string".into(), Value::NativeFunction(|_, _, args| {
+        let [arr] = Value::extract_args(args)?;
+        let arr = arr.as_arr()?.get();
+        let mut chars = Vec::with_capacity(arr.len());
+        for item in arr.iter() {
+            chars.push(item.as_int()? as u16);
+        }
+        Ok(Value::String(chars[..].into()))
+    }));
+
+    lib.insert("string_to_char_code".into(), Value::NativeFunction(|_, _, args| {
+        let [str] = Value::extract_args(args)?;
+        let arr = str.as_str()?.data().iter()
+            .map(|&c| Value::Int(c.into()))
+            .collect();
+        Ok(Value::new_arr(arr))
     }));
 
     ctx.add_lib("types".into(), Value::new_locked_obj(lib));

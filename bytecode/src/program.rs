@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 use crate::code;
 
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub enum GeneratingError {
 pub enum Constant {
     Int(i64),
     Float(f64),
-    String(Rc<str>)
+    String(Box<[u16]>)
 }
 
 #[derive(Default)]
@@ -20,7 +20,7 @@ struct ConstantPool {
     constant_list: Vec<Constant>,
     int_map: HashMap<i64, usize>,
     float_map: HashMap<u64, usize>,
-    str_map: HashMap<Rc<str>, usize>
+    str_map: HashMap<Box<[u16]>, usize>
 }
 
 impl ConstantPool {
@@ -46,13 +46,13 @@ impl ConstantPool {
     }
 
     fn str(&mut self, s: &str) -> usize {
+        let str: Box<_> = s.encode_utf16().collect();
         // string exists
-        if let Some(&idx) = self.str_map.get(s) {
+        if let Some(&idx) = self.str_map.get(&str) {
             return idx;
         }
         // string does not exist, create
         let idx = self.constant_list.len();
-        let str: Rc<str> = Rc::from(s);
         self.constant_list.push(Constant::String(str.clone()));
         self.str_map.insert(str, idx);
         idx
@@ -220,7 +220,7 @@ impl ProgramBundle {
             match constant {
                 Constant::Int(v) => eprintln!("int: {v}"),
                 Constant::Float(v) => eprintln!("float: {v}"),
-                Constant::String(v) => eprintln!("string: {v}")
+                Constant::String(v) => eprintln!("string: {}", String::from_utf16_lossy(v))
             }
         }
         eprintln!();
