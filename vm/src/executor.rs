@@ -435,12 +435,27 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                         let v2 = v2.as_int()?;
                         *v1 = v1.wrapping_shr(v2 as u32);
                     }
+                    Value::Object(obj) => {
+                        let entries: Vec<_> = obj.get().iter().map(|(k, v)|
+                            vec![Value::String(k.clone()), v.clone()]
+                        ).collect();
+                        let func = v2.as_closure()?;
+                        let mut res_arr = vec![];
+                        for entry in entries.into_iter() {
+                            let res = call(ctx, func, entry)?;
+                            match res {
+                                Value::Null => {}
+                                _ => res_arr.push(res)
+                            }
+                        }
+                        *v1 = Value::new_arr(res_arr);
+                    }
                     Value::Array(arr) => {
                         let arr = arr.get().clone();
                         let func = v2.as_closure()?;
                         let mut res_arr = vec![];
                         for elem in arr.into_iter() {
-                            let res = call(ctx, func, vec![elem.clone()])?;
+                            let res = call(ctx, func, vec![elem])?;
                             match res {
                                 Value::Null => {}
                                 _ => res_arr.push(res)

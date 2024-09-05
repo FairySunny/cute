@@ -9,19 +9,19 @@ pub fn load_libs(ctx: &mut Context) {
         Ok(Value::String(value.type_to_str().into()))
     }));
 
-    lib.insert("require".into(), Value::NativeFunction(|_, _, args| {
+    lib.insert("expect_type".into(), Value::NativeFunction(|_, _, args| {
         let ([value], types) = Value::extract_args_and_array(args)?;
         let type_str = value.type_to_str();
-        let mut required = Vec::with_capacity(types.len());
+        let mut expected = Vec::with_capacity(types.len());
         for t in &types {
             let arg_str = t.as_str()?.to_string();
             if type_str == arg_str {
                 return Ok(Value::Null);
             }
-            required.push(arg_str);
+            expected.push(arg_str);
         }
         Err(VMError::InvalidType {
-            expected: required.join("/"),
+            expected: expected.join("/"),
             got: type_str.to_owned()
         })
     }));
