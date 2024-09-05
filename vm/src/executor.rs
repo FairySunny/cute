@@ -430,9 +430,26 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
             code::SHR => {
                 let v2 = stack_pop(&mut stack)?;
                 let v1 = stack_top_mut(&mut stack)?;
-                let v1 = v1.as_int_mut()?;
-                let v2 = v2.as_int()?;
-                *v1 = v1.wrapping_shr(v2 as u32);
+                match v1 {
+                    Value::Int(v1) => {
+                        let v2 = v2.as_int()?;
+                        *v1 = v1.wrapping_shr(v2 as u32);
+                    }
+                    Value::Array(arr) => {
+                        let arr = arr.get().clone();
+                        let func = v2.as_closure()?;
+                        let mut res_arr = vec![];
+                        for elem in arr.into_iter() {
+                            let res = call(ctx, func, vec![elem.clone()])?;
+                            match res {
+                                Value::Null => {}
+                                _ => res_arr.push(res)
+                            }
+                        }
+                        *v1 = Value::new_arr(res_arr);
+                    }
+                    _ => return Err(VMError::invalid_type("int/array", v1))
+                }
             }
             code::LEN => {
                 let v = stack_pop(&mut stack)?;
