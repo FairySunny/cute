@@ -1,0 +1,15 @@
+print_array = @{
+    > a;
+    i = 0;
+    :{
+        << $a[$i];
+        $i = $i + 1;
+        < $i < #$a && nil;
+    };
+    << "";
+};
+
+a = [1, 2, 3, 4, 5];
+print_array(a[1:4]);
+print_array(a[1:4] = [0]);
+print_array(a);

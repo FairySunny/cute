@@ -31,7 +31,8 @@ enum LeftValue {
     Variable(String),
     Super(String),
     Field(String),
-    Item
+    Item,
+    Slice
 }
 
 #[derive(Debug)]
@@ -119,7 +120,8 @@ impl<'a, 'b> Parser<'a, 'b> {
                 self.program.byte(code::LOAD_FIELD);
                 self.program.str(name)?;
             },
-            LeftValue::Item => self.program.byte(code::LOAD_ITEM)
+            LeftValue::Item => self.program.byte(code::LOAD_ITEM),
+            LeftValue::Slice => self.program.byte(code::LOAD_SLICE)
         }
         Ok(())
     }
@@ -144,6 +146,10 @@ impl<'a, 'b> Parser<'a, 'b> {
             LeftValue::Item => {
                 self.program.byte(code::DUP_PRE3);
                 self.program.byte(code::STORE_ITEM);
+            },
+            LeftValue::Slice => {
+                self.program.byte(code::DUP_PRE4);
+                self.program.byte(code::STORE_SLICE);
             }
         }
         Ok(())
@@ -225,7 +231,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                     None
                 }
                 '[' => {
-                    fn after_range(parser: &mut Parser) -> Result<(), ParserError> {
+                    fn after_range(parser: &mut Parser) -> Result<Option<LeftValue>, ParserError> {
                         match parser.lexer.peek()? {
                             Token::Single(']') => {
                                 parser.lexer.next()?;
@@ -236,24 +242,19 @@ impl<'a, 'b> Parser<'a, 'b> {
                                 parser.expect_single(']')?;
                             }
                         }
-                        parser.program.byte(code::SLICE);
-                        Ok(())
+                        Ok(Some(LeftValue::Slice))
                     }
 
                     match self.lexer.peek()? {
                         Token::Single(':') => {
                             self.lexer.next()?;
                             self.program.byte(code::PUSH_NULL);
-                            after_range(self)?;
-                            None
+                            after_range(self)?
                         }
                         _ => {
                             self.expression()?;
                             match self.lexer.next()? {
-                                Token::Single(':') => {
-                                    after_range(self)?;
-                                    None
-                                }
+                                Token::Single(':') => after_range(self)?,
                                 Token::Single(']') => Some(LeftValue::Item),
                                 token => return Err(ParserError::UnexpectedToken(token))
                             }
@@ -282,7 +283,6 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
             Token::Shr => Some(UOp { pri: 0, action: UOpAction::In, write_lval: true }),
             Token::Shl => Some(UOp { pri: 0, action: UOpAction::Out, write_lval: false }),
-            Token::Channel => Some(UOp { pri: 16, action: UOpAction::Code(code::TAKE), write_lval: false }),
             _ => None
         };
 
@@ -314,7 +314,6 @@ impl<'a, 'b> Parser<'a, 'b> {
             Token::Shr => Some(BOp::left_c(11, code::SHR)),
             Token::Or => Some(BOp::left(4, BOpAction::Or)),
             Token::And => Some(BOp::left(5, BOpAction::And)),
-            Token::Channel => Some(BOp::left_c(6, code::PUT)),
             _ => None
         };
 

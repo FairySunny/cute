@@ -227,6 +227,15 @@ impl Value {
             .map_err(|_| VMError::ArrayIndexOutOfBound)
     }
 
+    pub fn as_slice_idx(&self) -> Result<Option<usize>, VMError> {
+        match self {
+            Value::Null => Ok(None),
+            Value::Int(i) => Ok(Some((*i).try_into()
+                .map_err(|_| VMError::ArrayIndexOutOfBound)?)),
+            _ => Err(VMError::invalid_type("null/int", self))
+        }
+    }
+
     pub fn as_float(&self) -> Result<f64, VMError> {
         match self {
             Value::Float(f) => Ok(*f),

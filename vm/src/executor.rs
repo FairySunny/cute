@@ -110,6 +110,29 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                     _ => return Err(VMError::invalid_type("object/array", &obj))
                 }
             }
+            code::LOAD_SLICE => {
+                let end = stack_pop(&mut stack)?.as_slice_idx()?;
+                let start = stack_pop(&mut stack)?.as_slice_idx()?.unwrap_or(0);
+                let obj = stack_pop(&mut stack)?;
+                let slice = match &obj {
+                    Value::String(s) => {
+                        let str = s.data();
+                        let end = end.unwrap_or(str.len());
+                        let slice = str.get(start .. end)
+                            .ok_or(VMError::ArrayIndexOutOfBound)?;
+                        Value::String(slice.into())
+                    }
+                    Value::Array(a) => {
+                        let arr = a.get();
+                        let end = end.unwrap_or(arr.len());
+                        let slice = arr.get(start .. end)
+                            .ok_or(VMError::ArrayIndexOutOfBound)?;
+                        Value::new_arr(slice.to_vec())
+                    }
+                    _ => return Err(VMError::invalid_type("string/array", &obj))
+                };
+                stack.push(slice);
+            }
             code::STORE => {
                 let str = next_str(&cur_func, &mut pc, program)?;
                 let value = stack_pop(&mut stack)?;
@@ -155,6 +178,22 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                     _ => return Err(VMError::invalid_type("object/array", &obj))
                 }
             }
+            code::STORE_SLICE => {
+                let value = stack_pop(&mut stack)?;
+                let end = stack_pop(&mut stack)?.as_slice_idx()?;
+                let start = stack_pop(&mut stack)?.as_slice_idx()?.unwrap_or(0);
+                let obj = stack_pop(&mut stack)?;
+                match &obj {
+                    Value::Array(a) => {
+                        let mut arr = a.get_mut()?;
+                        let end = end.unwrap_or(arr.len());
+                        arr.get(start .. end)
+                            .ok_or(VMError::ArrayIndexOutOfBound)?;
+                        arr.splice(start .. end, value.as_arr()?.get().clone());
+                    }
+                    _ => return Err(VMError::invalid_type("array", &obj))
+                };
+            }
             code::DUP => stack.push(stack_top(&stack)?.clone()),
             code::DUP_PRE2 => {
                 if stack.len() < 2 {
@@ -167,6 +206,12 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                     return Err(VMError::BadStack);
                 }
                 stack.insert(stack.len() - 3, stack.last().unwrap().clone());
+            }
+            code::DUP_PRE4 => {
+                if stack.len() < 4 {
+                    return Err(VMError::BadStack);
+                }
+                stack.insert(stack.len() - 4, stack.last().unwrap().clone());
             }
             code::POP => {
                 stack_pop(&mut stack)?;
@@ -398,56 +443,6 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                     _ => return Err(VMError::invalid_type("string/object/array", &v))
                 };
                 stack.push(Value::Int(len as i64));
-            }
-            code::SLICE => {
-                fn as_slice_idx(value: &Value) -> Result<Option<usize>, VMError> {
-                    match value {
-                        Value::Null => Ok(None),
-                        Value::Int(i) => Ok(Some((*i).try_into()
-                            .map_err(|_| VMError::ArrayIndexOutOfBound)?)),
-                        _ => Err(VMError::invalid_type("null/int", value))
-                    }
-                }
-                let end = as_slice_idx(&stack_pop(&mut stack)?)?;
-                let start = as_slice_idx(&stack_pop(&mut stack)?)?.unwrap_or(0);
-                let obj = stack_pop(&mut stack)?;
-                let slice = match &obj {
-                    Value::String(s) => {
-                        let str = s.data();
-                        let end = end.unwrap_or(str.len());
-                        let slice = str.get(start .. end)
-                            .ok_or(VMError::ArrayIndexOutOfBound)?;
-                        Value::String(slice.into())
-                    }
-                    Value::Array(a) => {
-                        let arr = a.get();
-                        let end = end.unwrap_or(arr.len());
-                        let slice = arr.get(start .. end)
-                            .ok_or(VMError::ArrayIndexOutOfBound)?;
-                        Value::new_arr(slice.to_vec())
-                    }
-                    _ => return Err(VMError::invalid_type("string/array", &obj))
-                };
-                stack.push(slice);
-            }
-            code::TAKE => {
-                let obj = stack_pop(&mut stack)?;
-                let item = match &obj {
-                    Value::Array(a) => {
-                        a.get_mut()?.pop()
-                            .ok_or(VMError::ArrayIndexOutOfBound)?
-                    }
-                    _ => return Err(VMError::invalid_type("array", &obj))
-                };
-                stack.push(item);
-            }
-            code::PUT => {
-                let item = stack_pop(&mut stack)?;
-                let obj = stack_top(&stack)?;
-                match obj {
-                    Value::Array(a) => a.get_mut()?.push(item),
-                    _ => return Err(VMError::invalid_type("array", obj))
-                }
             }
             code::IN => {
                 let mut str = String::new();

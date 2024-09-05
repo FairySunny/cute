@@ -2,15 +2,18 @@ pub const LOAD: u8 = 0x00;
 pub const LOAD_SUPER: u8 = 0x01;
 pub const LOAD_FIELD: u8 = 0x02;
 pub const LOAD_ITEM: u8 = 0x03;
+pub const LOAD_SLICE: u8 = 0x04;
 
 pub const STORE: u8 = 0x08;
 pub const STORE_SUPER: u8 = 0x09;
 pub const STORE_FIELD: u8 = 0x0a;
 pub const STORE_ITEM: u8 = 0x0b;
+pub const STORE_SLICE: u8 = 0x0c;
 
 pub const DUP: u8 = 0x10;
 pub const DUP_PRE2: u8 = 0x11;
 pub const DUP_PRE3: u8 = 0x12;
+pub const DUP_PRE4: u8 = 0x13;
 pub const POP: u8 = 0x14;
 
 pub const PUSH_NULL: u8 = 0x20;
@@ -54,10 +57,6 @@ pub const SHL: u8 = 0x54;
 pub const SHR: u8 = 0x55;
 
 pub const LEN: u8 = 0x58;
-pub const SLICE: u8 = 0x59;
-
-pub const TAKE: u8 = 0x5c;
-pub const PUT: u8 = 0x5d;
 
 pub const IN: u8 = 0x60;
 pub const OUT: u8 = 0x61;
@@ -73,7 +72,7 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "LOAD_SUPER", params: 1 },
     CodeInfo { name: "LOAD_FIELD", params: 1 },
     CodeInfo { name: "LOAD_ITEM", params: 0 },
-    CodeInfo { name: "0x04", params: 0 },
+    CodeInfo { name: "LOAD_SLICE", params: 0 },
     CodeInfo { name: "0x05", params: 0 },
     CodeInfo { name: "0x06", params: 0 },
     CodeInfo { name: "0x07", params: 0 },
@@ -81,14 +80,14 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "STORE_SUPER", params: 1 },
     CodeInfo { name: "STORE_FIELD", params: 1 },
     CodeInfo { name: "STORE_ITEM", params: 0 },
-    CodeInfo { name: "0x0c", params: 0 },
+    CodeInfo { name: "STORE_SLICE", params: 0 },
     CodeInfo { name: "0x0d", params: 0 },
     CodeInfo { name: "0x0e", params: 0 },
     CodeInfo { name: "0x0f", params: 0 },
     CodeInfo { name: "DUP", params: 0 },
     CodeInfo { name: "DUP_PRE2", params: 0 },
     CodeInfo { name: "DUP_PRE3", params: 0 },
-    CodeInfo { name: "0x13", params: 0 },
+    CodeInfo { name: "DUP_PRE4", params: 0 },
     CodeInfo { name: "POP", params: 0 },
     CodeInfo { name: "0x15", params: 0 },
     CodeInfo { name: "0x16", params: 0 },
@@ -158,11 +157,11 @@ pub const CODE_INFO: &[CodeInfo] = &[
     CodeInfo { name: "0x56", params: 0 },
     CodeInfo { name: "0x57", params: 0 },
     CodeInfo { name: "LEN", params: 0 },
-    CodeInfo { name: "SLICE", params: 0 },
+    CodeInfo { name: "0x59", params: 0 },
     CodeInfo { name: "0x5a", params: 0 },
     CodeInfo { name: "0x5b", params: 0 },
-    CodeInfo { name: "TAKE", params: 0 },
-    CodeInfo { name: "PUT", params: 0 },
+    CodeInfo { name: "0x5c", params: 0 },
+    CodeInfo { name: "0x5d", params: 0 },
     CodeInfo { name: "0x5e", params: 0 },
     CodeInfo { name: "0x5f", params: 0 },
     CodeInfo { name: "IN", params: 0 },
