@@ -2,7 +2,6 @@ use std::{collections::HashMap, rc::Rc, borrow::Borrow, io, path::Path};
 use gc::{Trace, Finalize, Gc, GcCell, GcCellRef, GcCellRefMut};
 use bytecode::program::ProgramBundle;
 use compiler::parser::ParserError;
-use crate::libraries;
 
 #[derive(Debug)]
 pub enum VMError {
@@ -388,16 +387,11 @@ pub struct Context {
 
 impl Context {
     pub fn new(program: ProgramBundle, path: Option<Rc<Path>>) -> Self {
-        let mut ctx = Self {
+        Self {
             programs: vec![(program, path)],
             libs: HashMap::new(),
             file_libs: HashMap::new()
-        };
-
-        libraries::misc::load_libs(&mut ctx);
-        libraries::sys::load_libs(&mut ctx);
-
-        ctx
+        }
     }
 
     pub fn add_program(&mut self, program: ProgramBundle, path: Option<Rc<Path>>) -> usize {
