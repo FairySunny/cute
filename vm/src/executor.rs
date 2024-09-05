@@ -1,4 +1,4 @@
-use std::{rc::Rc, path::{Path, PathBuf}, fs};
+use std::{str::FromStr, rc::Rc, path::{Path, PathBuf}, fs};
 use bytecode::{program::{ProgramBundle, Constant}, code};
 use crate::types::{VMError, Variables, VMString, Closure, Value, Context, ProgramState};
 
@@ -465,6 +465,91 @@ fn execute_closure(ctx: &mut Context, state: ProgramState) -> Result<Value, VMEr
                     }
                     _ => return Err(VMError::invalid_type("int/array", v1))
                 }
+            }
+            code::TYPE => {
+                let value = stack_pop(&mut stack)?;
+                let type_func = match &value {
+                    Value::Null => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        match &value {
+                            Value::Null => Ok(value),
+                            _ => Err(VMError::invalid_type("null", &value))
+                        }
+                    }),
+                    Value::Int(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        let res_int = match &value {
+                            Value::Int(i) => *i,
+                            Value::Float(f) => *f as i64,
+                            Value::String(s) => i64::from_str(&s.to_string())
+                                .map_err(|_| VMError::IllegalFunctionArguments)?,
+                            _ => return Err(VMError::invalid_type("int/float/string", &value))
+                        };
+                        Ok(Value::Int(res_int))
+                    }),
+                    Value::Float(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        let res_float = match &value {
+                            Value::Int(i) => *i as f64,
+                            Value::Float(f) => *f,
+                            Value::String(s) => f64::from_str(&s.to_string())
+                                .map_err(|_| VMError::IllegalFunctionArguments)?,
+                            _ => return Err(VMError::invalid_type("int/float/string", &value))
+                        };
+                        Ok(Value::Float(res_float))
+                    }),
+                    Value::Bool(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        let res_bool = match &value {
+                            Value::Null => false,
+                            Value::Int(i) => *i != 0,
+                            Value::Float(f) => *f != 0.0,
+                            Value::Bool(b) => *b,
+                            Value::String(s) => s.data().len() > 0,
+                            Value::Object(o) => o.get().len() > 0,
+                            Value::Array(a) => a.get().len() > 0,
+                            Value::Closure(_) => true,
+                            Value::NativeFunction(_) => true
+                        };
+                        Ok(Value::Bool(res_bool))
+                    }),
+                    Value::String(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        match &value {
+                            Value::String(_) => Ok(value),
+                            _ => Ok(Value::String(value.to_string()[..].into()))
+                        }
+                    }),
+                    Value::Object(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        match &value {
+                            Value::Object(_) => Ok(value),
+                            _ => Err(VMError::invalid_type("object", &value))
+                        }
+                    }),
+                    Value::Array(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        match &value {
+                            Value::Array(_) => Ok(value),
+                            _ => Err(VMError::invalid_type("array", &value))
+                        }
+                    }),
+                    Value::Closure(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        match &value {
+                            Value::Closure(_) => Ok(value),
+                            _ => Err(VMError::invalid_type("closure", &value))
+                        }
+                    }),
+                    Value::NativeFunction(_) => Value::NativeFunction(|_, _, args| {
+                        let [value] = Value::extract_args(args)?;
+                        match &value {
+                            Value::NativeFunction(_) => Ok(value),
+                            _ => Err(VMError::invalid_type("native function", &value))
+                        }
+                    })
+                };
+                stack.push(type_func);
             }
             code::LEN => {
                 let v = stack_pop(&mut stack)?;

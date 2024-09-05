@@ -276,6 +276,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 '!' => Some(UOp { pri: 16, action: UOpAction::Code(code::NOT), write_lval: false }),
                 '~' => Some(UOp { pri: 16, action: UOpAction::Code(code::BINV), write_lval: false }),
                 '#' => Some(UOp { pri: 16, action: UOpAction::Code(code::LEN), write_lval: false }),
+                '?' => Some(UOp { pri: 16, action: UOpAction::Code(code::TYPE), write_lval: false }),
                 ':' => Some(UOp { pri: 0, action: UOpAction::Loop, write_lval: false }),
                 '>' => Some(UOp { pri: 0, action: UOpAction::Arg, write_lval: true }),
                 '<' => Some(UOp { pri: 0, action: UOpAction::Return, write_lval: false }),

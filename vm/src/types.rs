@@ -395,7 +395,6 @@ impl Context {
         };
 
         libraries::misc::load_libs(&mut ctx);
-        libraries::types::load_libs(&mut ctx);
         libraries::sys::load_libs(&mut ctx);
 
         ctx
